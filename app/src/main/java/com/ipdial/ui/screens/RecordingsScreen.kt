@@ -136,14 +136,14 @@ fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: 
                         "${context.packageName}.provider",
                         file
                     )
-                    // ACTION_VIEW with type allows opening in a media player or file manager
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, "audio/*")
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "audio/*"
+                        putExtra(Intent.EXTRA_STREAM, uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    context.startActivity(Intent.createChooser(intent, "Open Recording"))
+                    context.startActivity(Intent.createChooser(intent, "Share/Export Recording"))
                 } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "Error locating file. Path: ${file.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                 }
             }) {
                 Icon(Icons.Default.Folder, "Locate", tint = MaterialTheme.colorScheme.primary)
