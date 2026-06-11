@@ -146,7 +146,7 @@ fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: 
                     android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                 }
             }) {
-                Icon(Icons.Default.Folder, "Locate", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Share, "Share", tint = MaterialTheme.colorScheme.primary)
             }
 
             IconButton(onClick = onDelete) {
