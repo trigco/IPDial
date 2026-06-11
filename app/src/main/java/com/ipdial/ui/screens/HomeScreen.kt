@@ -4,6 +4,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +43,23 @@ fun HomeScreen(
     
     var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Contacts
     val filterLabels = remember { listOf("History", "Contacts") }
+
+    // O(1) map for contact lookup by phone numbers (exact and last 10 digits for suffix matching)
+    val contactLookupMap = remember(contactsState) {
+        val map = mutableMapOf<String, Contact>()
+        contactsState.forEach { contact ->
+            contact.numbers.forEach { num ->
+                val cleaned = num.filter { it.isDigit() }
+                if (cleaned.isNotEmpty()) {
+                    map[cleaned] = contact
+                    if (cleaned.length >= 10) {
+                        map[cleaned.takeLast(10)] = contact
+                    }
+                }
+            }
+        }
+        map
+    }
 
     val filteredContacts = remember(contactsState, searchQuery, filterIndex) {
         if (filterIndex != 1) emptyList()
@@ -92,27 +111,67 @@ fun HomeScreen(
             labels = filterLabels
         )
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            if (filterIndex == 1) {
-                items(filteredContacts, key = { it.id }) { contact ->
-                    ContactItem(
-                        contact = contact,
-                        onCall = { contact.numbers.firstOrNull()?.let { vm.makeCall(it) } },
-                        onDetails = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                data = android.net.Uri.withAppendedPath(
-                                    android.provider.ContactsContract.Contacts.CONTENT_URI, 
-                                    contact.id
-                                )
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
+        if (filterIndex == 1) {
+            val sortedContacts = remember(filteredContacts) {
+                filteredContacts.sortedBy { it.name.trim().lowercase() }
+            }
+            val alphabet = remember { ('A'..'Z').toList() }
+            val letterToFirstIndex = remember(sortedContacts) {
+                val map = mutableMapOf<Char, Int>()
+                sortedContacts.forEachIndexed { index, contact ->
+                    val firstChar = contact.name.trim().firstOrNull()?.uppercaseChar() ?: '#'
+                    val targetChar = if (firstChar in 'A'..'Z') firstChar else '#'
+                    if (!map.containsKey(targetChar)) {
+                        map[targetChar] = index
+                    }
                 }
-            } else {
+                map
+            }
+
+            val contactsListState = rememberLazyListState()
+            val coroutineScope = rememberCoroutineScope()
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = contactsListState,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(sortedContacts, key = { it.id }) { contact ->
+                        ContactItem(
+                            contact = contact,
+                            onCall = { contact.numbers.firstOrNull()?.let { vm.makeCall(it) } },
+                            onDetails = {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    data = android.net.Uri.withAppendedPath(
+                                        android.provider.ContactsContract.Contacts.CONTENT_URI, 
+                                        contact.id
+                                    )
+                                }
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
+                }
+
+                AlphabetIndexer(
+                    alphabet = alphabet,
+                    letterToFirstIndex = letterToFirstIndex,
+                    onLetterSelected = { _, index ->
+                        coroutineScope.launch {
+                            contactsListState.scrollToItem(index)
+                        }
+                    }
+                )
+            }
+        } else {
+            val historyListState = rememberLazyListState()
+
+            LazyColumn(
+                state = historyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
                 if (grouped.isEmpty() && searchQuery.isBlank()) {
                     item { EmptyLogPrompt() }
                 } else {
@@ -127,17 +186,12 @@ fun HomeScreen(
                         }
                         items(entries, key = { it.id }) { entry ->
                             val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
-                            val contact = remember(cleanNumber, contactsState) {
-                                if (cleanNumber.length < 10) { // Only attempt contact match for numbers with at least 10 digits
-                                    null
+                            val contact = remember(cleanNumber, contactLookupMap) {
+                                if (cleanNumber.isEmpty()) null
+                                else if (cleanNumber.length >= 10) {
+                                    contactLookupMap[cleanNumber.takeLast(10)]
                                 } else {
-                                    contactsState.find { c ->
-                                        c.numbers.any { n ->
-                                            val cleanedContactNumber = n.filter { it.isDigit() }
-                                            cleanedContactNumber.length >= 10 && // Contact number must also be long enough
-                                            (cleanNumber.contains(cleanedContactNumber) || cleanedContactNumber.contains(cleanNumber))
-                                        }
-                                    }
+                                    contactLookupMap[cleanNumber]
                                 }
                             }
                             CallLogRow(
@@ -150,7 +204,6 @@ fun HomeScreen(
                     }
                 }
             }
-            item { Spacer(Modifier.height(80.dp)) }
         }
     }
 }

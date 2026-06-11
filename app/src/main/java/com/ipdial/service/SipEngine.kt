@@ -43,7 +43,7 @@ object SipEngine {
 
     var onIncomingCall: ((CallSession) -> Unit)? = null
 
-    private var recorder: AudioMediaRecorder? = null
+    private var androidMediaRecorder: android.media.MediaRecorder? = null
     private var logWriter: SipLogWriter? = null
 
     private fun log(message: String, isError: Boolean = false) {
@@ -322,25 +322,18 @@ object SipEngine {
     fun startRecording(filePath: String) {
         registerCurrentThread()
         try {
-            recorder?.delete()
-            recorder = AudioMediaRecorder()
-            recorder?.createRecorder(filePath)
-            
-            _callSession.value?.let { session ->
-                callMap[session.callId]?.let { call ->
-                    val ci = call.info
-                    for (i in 0 until ci.media.size) {
-                        val mi = ci.media.get(i)
-                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO && 
-                            mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
-                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index.toLong()))
-                            aud.startTransmit(recorder)
-                            endpoint?.audDevManager()?.captureDevMedia?.startTransmit(recorder)
-                        }
-                    }
-                }
-                _callSession.value = session.copy(isRecording = true)
+            androidMediaRecorder?.release()
+            androidMediaRecorder = android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                setAudioEncodingBitRate(64000)
+                setAudioSamplingRate(44100)
+                setOutputFile(filePath)
+                prepare()
+                start()
             }
+            _callSession.value = _callSession.value?.copy(isRecording = true)
         } catch (e: Throwable) {
             Log.e(TAG, "startRecording failed: ${e.message}")
         }
@@ -349,8 +342,9 @@ object SipEngine {
     fun stopRecording() {
         registerCurrentThread()
         try {
-            recorder?.delete()
-            recorder = null
+            androidMediaRecorder?.stop()
+            androidMediaRecorder?.release()
+            androidMediaRecorder = null
             _callSession.value = _callSession.value?.copy(isRecording = false)
         } catch (e: Throwable) { }
     }
@@ -420,8 +414,11 @@ object SipEngine {
             accountMap.values.forEach { it.delete() }
             accountMap.clear()
             
-            recorder?.delete()
-            recorder = null
+            try {
+                androidMediaRecorder?.stop()
+            } catch (e: Exception) {}
+            androidMediaRecorder?.release()
+            androidMediaRecorder = null
             
             endpoint?.libDestroy()
             endpoint?.delete()
@@ -537,11 +534,6 @@ object SipEngine {
                         val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
                         aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
                         endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
-                        
-                        recorder?.let { 
-                            aud.startTransmit(it)
-                            endpoint?.audDevManager()?.captureDevMedia?.startTransmit(it)
-                        }
                     }
                 }
             } catch (e: Throwable) { }

@@ -73,7 +73,9 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 } else {
                                     try {
                                         mediaPlayer.reset()
-                                        mediaPlayer.setDataSource(file.absolutePath)
+                                        java.io.FileInputStream(file).use { fis ->
+                                            mediaPlayer.setDataSource(fis.fd)
+                                        }
                                         mediaPlayer.prepare()
                                         mediaPlayer.start()
                                         playingFile = file

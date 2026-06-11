@@ -289,8 +289,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             val folder = java.io.File(getApplication<Application>().filesDir, "recordings")
             try {
                 if (!folder.exists()) folder.mkdirs()
-                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.wav")
-                // Format codec is handled by SipEngine (currently WAV for simplicity, or Opus if configured)
+                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.m4a")
+                // Format codec is handled by SipEngine (AAC)
                 SipEngine.startRecording(recFile.absolutePath)
             } catch (e: Exception) {
                 android.util.Log.e("SipViewModel", "Recording failed", e)

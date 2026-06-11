@@ -5,11 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +35,25 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val accounts by vm.accounts.collectAsState()
     val context = LocalContext.current
 
+    val sortedContacts = remember(contacts) {
+        contacts.sortedBy { it.name.trim().lowercase() }
+    }
+    val alphabet = remember { ('A'..'Z').toList() }
+    val letterToFirstIndex = remember(sortedContacts) {
+        val map = mutableMapOf<Char, Int>()
+        sortedContacts.forEachIndexed { index, contact ->
+            val firstChar = contact.name.trim().firstOrNull()?.uppercaseChar() ?: '#'
+            val targetChar = if (firstChar in 'A'..'Z') firstChar else '#'
+            if (!map.containsKey(targetChar)) {
+                map[targetChar] = index
+            }
+        }
+        map
+    }
+
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
@@ -47,23 +68,39 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 shape = CircleShape
             )
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(contacts) { contact ->
-                    ContactItem(
-                        contact = contact,
-                        onCall = {
-                            contact.numbers.firstOrNull()?.let { num ->
-                                vm.makeCall(num)
+            
+            Row(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(sortedContacts, key = { it.id }) { contact ->
+                        ContactItem(
+                            contact = contact,
+                            onCall = {
+                                contact.numbers.firstOrNull()?.let { num ->
+                                    vm.makeCall(num)
+                                }
+                            },
+                            onDetails = {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contact.id)
+                                }
+                                context.startActivity(intent)
                             }
-                        },
-                        onDetails = {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contact.id)
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
+                        )
+                    }
                 }
+
+                AlphabetIndexer(
+                    alphabet = alphabet,
+                    letterToFirstIndex = letterToFirstIndex,
+                    onLetterSelected = { _, index ->
+                        coroutineScope.launch {
+                            listState.scrollToItem(index)
+                        }
+                    }
+                )
             }
         }
     }
