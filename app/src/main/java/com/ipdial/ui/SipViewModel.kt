@@ -19,6 +19,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.os.Handler
+import android.os.Looper
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -27,19 +30,19 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     private val contactsRepo = ContactsRepository(app)
 
     val accounts: StateFlow<List<SipAccount>> = repo.accounts
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val globalRingtone: StateFlow<String?> = repo.globalRingtone
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val darkModeEnabled: StateFlow<Boolean> = repo.darkModeEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
         
     val callingCardsEnabled: StateFlow<Boolean> = repo.callingCardsEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
         
     val dndEnabled: StateFlow<Boolean> = repo.dndEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun setDarkMode(enabled: Boolean) = viewModelScope.launch { repo.setDarkMode(enabled) }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
@@ -49,7 +52,6 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val callSession: StateFlow<CallSession?> = SipEngine.callSession
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // Contacts state
     private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
@@ -104,39 +106,23 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 _isConnected.value = true
-                viewModelScope.launch {
-                    accounts.value.forEach { 
-                        if (it.isEnabled) {
-                            SipEngine.addAccount(it)
-                            SipEngine.reconnectAccount(it.id)
-                        }
-                    }
-                }
             }
 
             override fun onLost(network: Network) {
                 _isConnected.value = false
-                viewModelScope.launch {
-                    accounts.value.forEach {
-                        repo.updateRegStatus(it.id, RegStatus.ERROR)
-                    }
-                }
             }
         })
 
-        // Auto-select default account
-        viewModelScope.launch {
+        // Auto-select default/enabled account
+        viewModelScope.launch(Dispatchers.IO) {
             accounts.collectLatest { list ->
-                list.forEach { account ->
-                    if (account.isEnabled && _isConnected.value) {
-                        SipEngine.addAccount(account)
-                    } else if (!account.isEnabled) {
-                        SipEngine.removeAccount(account.id)
+                withContext(Dispatchers.Main) {
+                    val currentSelected = list.find { it.id == _selectedAccountId.value }
+                    if (currentSelected == null || !currentSelected.isEnabled) {
+                        _selectedAccountId.value = list.firstOrNull { it.isEnabled && it.isDefault }?.id
+                            ?: list.firstOrNull { it.isEnabled }?.id
+                            ?: list.firstOrNull()?.id
                     }
-                }
-                if (_selectedAccountId.value == null) {
-                    _selectedAccountId.value = list.firstOrNull { it.isDefault }?.id
-                        ?: list.firstOrNull()?.id
                 }
             }
         }
@@ -204,15 +190,16 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             .replace("(", "")
             .replace(")", "")
 
-        val accId = _selectedAccountId.value ?: accounts.value.firstOrNull()?.id
-        if (accId == null) {
-            Toast.makeText(getApplication(), "No SIP account configured", Toast.LENGTH_SHORT).show()
-            return
+        var account = accounts.value.find { it.id == _selectedAccountId.value }
+        if (account == null || !account.isEnabled) {
+            account = accounts.value.firstOrNull { it.isEnabled }
+            if (account != null) {
+                _selectedAccountId.value = account.id
+            }
         }
 
-        val account = accounts.value.find { it.id == accId }
-        if (account == null || !account.isEnabled) {
-            Toast.makeText(getApplication(), "Selected account is disabled", Toast.LENGTH_SHORT).show()
+        if (account == null) {
+            Toast.makeText(getApplication(), "No enabled SIP account configured", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -269,14 +256,14 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         if (callSession.value == null) {
             // Use TelecomHelper to place the call for proper system integration
             val success = try {
-                com.ipdial.service.TelecomHelper.placeOutgoingCall(getApplication(), finalUri, accId)
+                com.ipdial.service.TelecomHelper.placeOutgoingCall(getApplication(), finalUri, account.id)
             } catch (e: Exception) {
                 android.util.Log.e("SipViewModel", "TelecomManager failure, falling back", e)
                 false
             }
             if (!success) {
                 android.util.Log.i("SipViewModel", "TelecomManager call failed to initiate, falling back to direct SipEngine calling")
-                val engineStarted = SipEngine.makeCall(accId, finalUri)
+                val engineStarted = SipEngine.makeCall(account.id, finalUri)
                 if (!engineStarted) {
                     Toast.makeText(getApplication(), "Call not sent", Toast.LENGTH_SHORT).show()
                 }
@@ -291,17 +278,25 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun answerCall() {
         val id = callSession.value?.callId ?: return
-        SipEngine.answerCall(id)
-        com.ipdial.service.SipConnectionService.getConnection(id)?.setActive()
+        viewModelScope.launch(Dispatchers.IO) {
+            SipEngine.answerCall(id)
+            withContext(Dispatchers.Main) {
+                com.ipdial.service.SipConnectionService.getConnection(id)?.setActive()
+            }
+        }
     }
 
     fun hangup() { 
         val id = callSession.value?.callId ?: -1
-        SipEngine.hangupCall(id)
-        if (id != -1) {
-            com.ipdial.service.SipConnectionService.getConnection(id)?.let {
-                it.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.LOCAL))
-                it.destroy()
+        viewModelScope.launch(Dispatchers.IO) {
+            SipEngine.hangupCall(id)
+            withContext(Dispatchers.Main) {
+                if (id != -1) {
+                    com.ipdial.service.SipConnectionService.getConnection(id)?.let {
+                        it.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.LOCAL))
+                        it.destroy()
+                    }
+                }
             }
         }
     }
@@ -328,14 +323,11 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveAccount(account: SipAccount) = viewModelScope.launch {
+    fun saveAccount(account: SipAccount) = viewModelScope.launch(Dispatchers.IO) {
         repo.saveAccount(account)
-        if (account.isEnabled) SipEngine.addAccount(account)
-        else SipEngine.removeAccount(account.id)
     }
 
-    fun deleteAccount(id: String) = viewModelScope.launch {
-        SipEngine.removeAccount(id)
+    fun deleteAccount(id: String) = viewModelScope.launch(Dispatchers.IO) {
         repo.deleteAccount(id)
     }
 
@@ -351,7 +343,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     fun callBack(entry: CallLogEntry) {
         val accId = entry.accountId.ifBlank {
-            _selectedAccountId.value ?: accounts.value.firstOrNull()?.id ?: return
+            _selectedAccountId.value ?: accounts.value.firstOrNull { it.isEnabled }?.id ?: accounts.value.firstOrNull()?.id ?: return
         }
         _selectedAccountId.value = accId
         makeCall(cleanUri(entry.remoteUri))

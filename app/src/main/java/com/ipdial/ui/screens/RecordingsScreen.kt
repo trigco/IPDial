@@ -111,7 +111,7 @@ fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: 
     val sizeStr = "%.2f MB".format(file.length().toDouble() / (1024 * 1024))
 
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onPlay() },
+        modifier = Modifier.fillMaxWidth().clickableWithRipple { onPlay() },
         color = MaterialTheme.colorScheme.surface
     ) {
         Row(

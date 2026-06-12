@@ -19,3 +19,8 @@
 
 # Compose
 -dontwarn androidx.compose.**
+
+# Fix for Ripple crash in Compose 1.7+ with Material 2/3
+-keep class androidx.compose.material.ripple.** { *; }
+-keep class androidx.compose.material3.ripple.** { *; }
+-keep interface androidx.compose.foundation.IndicationNodeFactory { *; }

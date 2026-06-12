@@ -21,6 +21,7 @@ import coil.compose.AsyncImage
 import com.ipdial.data.model.Contact
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
+import com.ipdial.ui.NumberPickerDialog
 
 import android.content.Intent
 import android.net.Uri
@@ -34,6 +35,7 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val searchQuery by vm.searchQuery.collectAsState()
     val accounts by vm.accounts.collectAsState()
     val context = LocalContext.current
+    var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
 
     val sortedContacts = remember(contacts) {
         contacts.sortedBy { it.name.trim().lowercase() }
@@ -78,8 +80,12 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                         ContactItem(
                             contact = contact,
                             onCall = {
-                                contact.numbers.firstOrNull()?.let { num ->
-                                    vm.makeCall(num)
+                                if (contact.numbers.size > 1) {
+                                    activeContactForNumberPicker = contact
+                                } else {
+                                    contact.numbers.firstOrNull()?.let { num ->
+                                        vm.makeCall(num)
+                                    }
                                 }
                             },
                             onDetails = {
@@ -104,6 +110,14 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             }
         }
     }
+
+    activeContactForNumberPicker?.let { contact ->
+        NumberPickerDialog(
+            numbers = contact.numbers,
+            onPick = { number -> vm.makeCall(number) },
+            onDismiss = { activeContactForNumberPicker = null }
+        )
+    }
 }
 
 @Composable
@@ -111,7 +125,7 @@ fun ContactItem(contact: Contact, onCall: () -> Unit, onDetails: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onDetails() }
+            .clickableWithRipple { onDetails() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -124,7 +138,9 @@ fun ContactItem(contact: Contact, onCall: () -> Unit, onDetails: () -> Unit) {
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
             Text(contact.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-            Text(contact.numbers.firstOrNull() ?: "", style = MaterialTheme.typography.bodySmall)
+            contact.numbers.forEach { number ->
+                Text(number, style = MaterialTheme.typography.bodySmall)
+            }
         }
         IconButton(onClick = onCall) {
             Icon(Icons.Default.Call, "Call", tint = MaterialTheme.colorScheme.primary)

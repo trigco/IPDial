@@ -10,6 +10,10 @@ import android.media.RingtoneManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import com.ipdial.MainActivity
 import com.ipdial.R
 import com.ipdial.data.model.CallDirection
@@ -102,6 +106,9 @@ class SipService : Service() {
     private lateinit var audioManager: AudioManager
     private lateinit var repo: AccountRepository
     private var wakeLock: PowerManager.WakeLock? = null
+    private val activeConfigs = java.util.concurrent.ConcurrentHashMap<String, com.ipdial.data.model.SipAccount>()
+    private var isConnected = false
+    private var lastNetwork: Network? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -109,25 +116,31 @@ class SipService : Service() {
         repo = AccountRepository(applicationContext)
         createNotificationChannels()
         TelecomHelper.registerPhoneAccount(applicationContext)
-        SipEngine.init(applicationContext)
-        SipEngine.onIncomingCall = { session -> 
-            val isDnd = kotlinx.coroutines.runBlocking { repo.dndEnabled.first() }
-            if (isDnd) {
-                SipEngine.hangupCall(session.callId)
-            } else {
-                // Report to Telecom for basic integration (busy signal, system call management)
-                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
-                showIncomingCallNotification(session.remoteDisplayName, session.callId)
-            }
-        }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
         } else {
             startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
         }
-        
+
         scope.launch {
+            // 1. Initialize PJSIP
+            SipEngine.init(applicationContext)
+            
+            Handler(Looper.getMainLooper()).post {
+                SipEngine.onIncomingCall = { session -> 
+                    val isDnd = kotlinx.coroutines.runBlocking { repo.dndEnabled.first() }
+                    if (isDnd) {
+                        SipEngine.hangupCall(session.callId)
+                    } else {
+                        // Report to Telecom for basic integration (busy signal, system call management)
+                        TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
+                        showIncomingCallNotification(session.remoteDisplayName, session.callId)
+                    }
+                }
+            }
+
+            // 2. Ensure default codec G711A
             try {
                 val accountsList = repo.accounts.first()
                 accountsList.forEach { acc ->
@@ -138,10 +151,71 @@ class SipService : Service() {
             } catch (e: Exception) {
                 Log.e("SipService", "Failed to force G711A codec", e)
             }
+
+            // 3. Register accounts flow
+            registerAccountsFromDataStore()
+
+            // 4. Register default network callback
+            registerDefaultNetworkCallback()
         }
 
-        registerAccountsFromDataStore()
         observeCallState()
+    }
+
+    private fun registerDefaultNetworkCallback() {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        try {
+            connectivityManager.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.d("SipService", "onAvailable default network: $network")
+                    val isInitial = (lastNetwork == null)
+                    val wasOffline = !isConnected
+                    val networkChanged = (lastNetwork != network)
+                    
+                    lastNetwork = network
+                    isConnected = true
+                    
+                    scope.launch(Dispatchers.IO) {
+                        val freshAccounts = repo.accounts.first()
+                        val enabledAccounts = freshAccounts.filter { it.isEnabled }
+                        if (enabledAccounts.isEmpty()) return@launch
+                        
+                        val hasUnregistered = enabledAccounts.any { it.regStatus != RegStatus.REGISTERED }
+                        val shouldReconnect = if (!isInitial) {
+                            networkChanged || wasOffline
+                        } else {
+                            hasUnregistered
+                        }
+                        
+                        if (shouldReconnect) {
+                            Log.d("SipService", "Default network active/changed (isInitial=$isInitial, wasOffline=$wasOffline, networkChanged=$networkChanged). Reconnecting...")
+                            enabledAccounts.forEach { account ->
+                                repo.updateRegStatus(account.id, RegStatus.REGISTERING)
+                            }
+                            
+                            SipEngine.handleIpChange()
+                            delay(1000)
+                            SipEngine.forceReconnectAll()
+                        }
+                    }
+                }
+
+                override fun onLost(network: Network) {
+                    Log.d("SipService", "onLost default network: $network")
+                    if (lastNetwork == network) {
+                        isConnected = false
+                        scope.launch {
+                            val freshAccounts = repo.accounts.first()
+                            freshAccounts.forEach {
+                                repo.updateRegStatus(it.id, RegStatus.ERROR)
+                            }
+                        }
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e("SipService", "Failed to register default network callback", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -218,18 +292,43 @@ class SipService : Service() {
     private fun registerAccountsFromDataStore() {
         scope.launch {
             repo.accounts.collectLatest { accounts ->
-                // Sync engine accounts
-                accounts.filter { it.isEnabled }.forEach { acc ->
-                    SipEngine.addAccount(acc)
+                accounts.forEach { account ->
+                    if (account.isEnabled) {
+                        val active = activeConfigs[account.id]
+                        val hasChanged = active == null ||
+                                active.username != account.username ||
+                                active.password != account.password ||
+                                active.domain != account.domain ||
+                                active.proxy != account.proxy ||
+                                active.port != account.port ||
+                                active.transport != account.transport ||
+                                active.codec != account.codec ||
+                                active.ecEnabled != account.ecEnabled ||
+                                active.nsEnabled != account.nsEnabled ||
+                                active.agcEnabled != account.agcEnabled
+
+                        if (hasChanged) {
+                            activeConfigs[account.id] = account
+                            SipEngine.addAccount(account)
+                        }
+                    } else {
+                        if (activeConfigs.containsKey(account.id)) {
+                            activeConfigs.remove(account.id)
+                            SipEngine.removeAccount(account.id)
+                        }
+                        if (account.regStatus != RegStatus.UNREGISTERED) {
+                            scope.launch {
+                                repo.updateRegStatus(account.id, RegStatus.UNREGISTERED)
+                            }
+                        }
+                    }
                 }
             }
         }
         // Observe registration events to update DataStore
         scope.launch {
-            SipEngine.registrationEvents.collectLatest { event ->
-                event?.let { (accountId, status) ->
-                    repo.updateRegStatus(accountId, status)
-                }
+            SipEngine.registrationEvents.collect { (accountId, status) ->
+                repo.updateRegStatus(accountId, status)
             }
         }
     }
@@ -300,10 +399,13 @@ class SipService : Service() {
                         CallState.CONFIRMED -> {
                             stopRingtone()
                             cancelIncomingNotification()
-                            routeAudioToEarpiece()
+                            routeAudioToSpeaker(session.isSpeaker)
                             acquireWakeLock()
                             lastWasConfirmed = true
                             if (callStartTime == 0L) callStartTime = System.currentTimeMillis()
+                        }
+                        CallState.CALLING, CallState.EARLY, CallState.CONNECTING -> {
+                            routeAudioToSpeaker(session.isSpeaker)
                         }
                         else -> {}
                     }
@@ -313,18 +415,57 @@ class SipService : Service() {
     }
 
     private fun routeAudioToEarpiece() {
+        val session = SipEngine.callSession.value
+        if (session != null && session.callId >= 0) {
+            val connection = SipConnectionService.getConnection(session.callId)
+            connection?.setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE)
+        }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        }
     }
 
     fun routeAudioToSpeaker(on: Boolean) {
+        val session = SipEngine.callSession.value
+        if (session != null && session.callId >= 0) {
+            val connection = SipConnectionService.getConnection(session.callId)
+            if (connection != null) {
+                val route = if (on) android.telecom.CallAudioState.ROUTE_SPEAKER else android.telecom.CallAudioState.ROUTE_EARPIECE
+                connection.setAudioRoute(route)
+                Log.d("SipService", "Routed audio via Telecom Connection to speaker=$on")
+            }
+        }
+
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = on
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (on) {
+                val devices = audioManager.availableCommunicationDevices
+                val speakerDevice = devices.find { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                if (speakerDevice != null) {
+                    val res = audioManager.setCommunicationDevice(speakerDevice)
+                    Log.d("SipService", "setCommunicationDevice speaker: $res")
+                } else {
+                    Log.e("SipService", "Built-in speaker device not found")
+                }
+            } else {
+                audioManager.clearCommunicationDevice()
+                Log.d("SipService", "clearCommunicationDevice")
+            }
+        }
     }
 
     private fun restoreAudio() {
         audioManager.mode = AudioManager.MODE_NORMAL
+        @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        }
     }
 
     private fun acquireWakeLock() {

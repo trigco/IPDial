@@ -99,7 +99,7 @@ fun AccountSettingsRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onEdit() }
+                .clickableWithRipple { onEdit() }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -177,19 +177,22 @@ fun AccountEditSheet(
     var proxy     by remember { mutableStateOf(existing?.proxy ?: "") }
     var port      by remember { mutableStateOf(existing?.port?.toString() ?: "") }
     var transport by remember { mutableStateOf(existing?.transport ?: Transport.UDP) }
-    var codec     by remember { mutableStateOf(existing?.codec ?: PreferredCodec.OPUS) }
+    var codec     by remember { mutableStateOf(existing?.codec ?: PreferredCodec.G711A) }
     var ecEnabled by remember { mutableStateOf(existing?.ecEnabled ?: true) }
     var nsEnabled by remember { mutableStateOf(existing?.nsEnabled ?: true) }
     var agcEnabled by remember { mutableStateOf(existing?.agcEnabled ?: true) }
     var showPass  by remember { mutableStateOf(false) }
 
-    // Auto-detect transport based on domain/proxy
-    LaunchedEffect(domain, proxy) {
-        val isSips = domain.startsWith("sips:", ignoreCase = true) || proxy.startsWith("sips:", ignoreCase = true)
-        if (isSips && transport != Transport.TLS) {
-            transport = Transport.TLS
-        } else if (!isSips && transport == Transport.TLS) {
-            transport = Transport.UDP
+    // Auto-detect transport based on domain, proxy, and port
+    LaunchedEffect(domain, proxy, port) {
+        val isSips = domain.startsWith("sips:", ignoreCase = true) || proxy.startsWith("sips:", ignoreCase = true) || domain.contains("transport=tls", ignoreCase = true) || proxy.contains("transport=tls", ignoreCase = true)
+        val isTcp = domain.contains("transport=tcp", ignoreCase = true) || proxy.contains("transport=tcp", ignoreCase = true)
+        val parsedPort = port.toIntOrNull()
+        
+        transport = when {
+            isSips || parsedPort == 5061 -> Transport.TLS
+            isTcp -> Transport.TCP
+            else -> Transport.UDP
         }
     }
 
@@ -246,39 +249,13 @@ fun AccountEditSheet(
                 label = { Text("Outbound Proxy (optional)") },
                 singleLine = true, modifier = Modifier.fillMaxWidth()
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = port, onValueChange = { port = it.filter(Char::isDigit) },
-                    label = { Text("Port (optional)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
-                )
-                // Transport dropdown
-                var transportExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = transportExpanded,
-                    onExpandedChange = { transportExpanded = it },
-                    modifier = Modifier.weight(1.5f)
-                ) {
-                    OutlinedTextField(
-                        value = transport.name,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Transport") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(transportExpanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(expanded = transportExpanded, onDismissRequest = { transportExpanded = false }) {
-                        Transport.values().forEach { t ->
-                            DropdownMenuItem(
-                                text = { Text(t.name) },
-                                onClick = { transport = t; transportExpanded = false }
-                            )
-                        }
-                    }
-                }
-            }
+            OutlinedTextField(
+                value = port, onValueChange = { port = it.filter(Char::isDigit) },
+                label = { Text("Port (optional)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(Modifier.height(8.dp))
 

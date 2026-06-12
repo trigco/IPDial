@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,11 +28,18 @@ import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
 import com.ipdial.data.model.CallDirection
 import com.ipdial.data.model.CallState
+import com.ipdial.data.model.CallSession
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.screens.*
 import com.ipdial.ui.theme.IPDialTheme
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 
 import androidx.activity.viewModels
+
+import androidx.activity.enableEdgeToEdge
 
 object AppState {
     var isForeground = false
@@ -65,6 +74,7 @@ class MainActivity : ComponentActivity() {
     private val triggerHangup = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         requestRequiredPermissions()
         com.ipdial.service.SipService.start(this)
@@ -140,6 +150,26 @@ fun IPDialApp(
 ) {
     val vm: SipViewModel = viewModel()
     val callSession by vm.callSession.collectAsState()
+    val callingCardsEnabled by vm.callingCardsEnabled.collectAsState()
+    var showFullIncomingScreen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(callSession, callingCardsEnabled) {
+        val session = callSession
+        if (session == null) {
+            showFullIncomingScreen = false
+        } else if (session.direction == CallDirection.INCOMING && 
+                   (session.state == CallState.INCOMING || session.state == CallState.EARLY)) {
+            if (callingCardsEnabled) {
+                showFullIncomingScreen = true
+            } else {
+                showFullIncomingScreen = false
+                kotlinx.coroutines.delay(5000)
+                showFullIncomingScreen = true
+            }
+        } else {
+            showFullIncomingScreen = true
+        }
+    }
     
     LaunchedEffect(testCallNumber.value, triggerHangup.value) {
         testCallNumber.value?.let { number ->
@@ -261,8 +291,9 @@ fun IPDialApp(
         ) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Scaffold(
+                    contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
                     bottomBar = {
-                        val showBottomBar = activeCallSession == null && (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route)
+                        val showBottomBar = (activeCallSession == null || !showFullIncomingScreen) && (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route)
                         if (showBottomBar) {
                             NavigationBar(tonalElevation = 3.dp) {
                                 bottomTabs.forEach { dest ->
@@ -283,7 +314,7 @@ fun IPDialApp(
                         }
                     }
                 ) { innerPadding ->
-                    if (activeCallSession != null) {
+                    if (activeCallSession != null && showFullIncomingScreen) {
                         when (activeCallSession.direction) {
                             CallDirection.INCOMING -> {
                                 if (activeCallSession.state == CallState.INCOMING || 
@@ -298,13 +329,14 @@ fun IPDialApp(
                             }
                         }
                     } else {
-                        NavHost(
-                            navController = navController,
-                            startDestination = NavDest.Home.route,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            NavHost(
+                                navController = navController,
+                                startDestination = NavDest.Home.route,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                            ) {
                             composable(NavDest.Home.route) { 
                                 HomeScreen(
                                     vm = vm, 
@@ -363,8 +395,119 @@ fun IPDialApp(
                                 )
                             }
                         }
+
+                        // If there is an incoming call, but we are not showing full screen, show the banner!
+                        if (activeCallSession != null && 
+                            activeCallSession.direction == CallDirection.INCOMING &&
+                            (activeCallSession.state == CallState.INCOMING || activeCallSession.state == CallState.EARLY)) {
+                            
+                            val contacts by vm.contacts.collectAsState()
+                            val contact = remember(activeCallSession.remoteUri, contacts) {
+                                val cleanedSessionUriDigits = vm.cleanUri(activeCallSession.remoteUri).filter { it.isDigit() }
+                                if (cleanedSessionUriDigits.length < 10) {
+                                    null
+                                } else {
+                                    contacts.find { c ->
+                                        c.numbers.any { n ->
+                                            val cleanedContactNumberDigits = n.filter { it.isDigit() }
+                                            cleanedContactNumberDigits.length >= 10 &&
+                                            (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                                        }
+                                    }
+                                }
+                            }
+                            val displayName = contact?.name ?: activeCallSession.remoteDisplayName.ifBlank { vm.cleanUri(activeCallSession.remoteUri) }
+
+                            IncomingCallBanner(
+                                session = activeCallSession,
+                                displayName = displayName,
+                                onAnswer = { vm.answerCall() },
+                                onDecline = { vm.hangup() },
+                                onClick = { showFullIncomingScreen = true }
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+}
+
+@Composable
+fun IncomingCallBanner(
+    session: CallSession,
+    displayName: String,
+    onAnswer: () -> Unit,
+    onDecline: () -> Unit,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .statusBarsPadding()
+            .shadow(8.dp, RoundedCornerShape(16.dp))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Call,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Incoming Call",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onDecline,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = com.ipdial.ui.theme.EndRed,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CallEnd,
+                    contentDescription = "Decline",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onAnswer,
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = com.ipdial.ui.theme.ForestGreen,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = "Answer",
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }

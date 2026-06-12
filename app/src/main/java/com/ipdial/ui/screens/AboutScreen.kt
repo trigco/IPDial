@@ -42,44 +42,6 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         catch (e: Exception) { "1.0" }
     }
 
-    // Update check state
-    var checkingUpdate by remember { mutableStateOf(false) }
-    var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
-    var upToDateMsg by remember { mutableStateOf(false) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-
-    // Update dialog
-    if (showUpdateDialog && updateRelease != null) {
-        AlertDialog(
-            onDismissRequest = { showUpdateDialog = false },
-            icon = { Icon(Icons.Default.SystemUpdate, null) },
-            title = { Text("Update Available") },
-            text = {
-                Column {
-                    Text("Version ${updateRelease!!.tagName.trimStart('v')} is available.")
-                    if (updateRelease!!.body.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            updateRelease!!.body.take(300),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showUpdateDialog = false
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.htmlUrl))
-                    context.startActivity(intent)
-                }) { Text("Download") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdateDialog = false }) { Text("Later") }
-            }
-        )
-    }
-
     val appIconBitmap = remember(context) {
         try {
             val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
@@ -125,58 +87,12 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            Spacer(Modifier.height(24.dp))
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.padding(horizontal = 16.dp)
-            ) {
-                Text(
-                    text = "IPDial",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
             Text(
                 text = "Version $currentVersion",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
             )
-            Spacer(Modifier.height(8.dp))
-            // Check for updates button
-            OutlinedButton(
-                onClick = {
-                    checkingUpdate = true
-                    upToDateMsg = false
-                    scope.launch {
-                        val release = UpdateChecker.checkForUpdates(currentVersion)
-                        checkingUpdate = false
-                        if (release != null) {
-                            updateRelease = release
-                            showUpdateDialog = true
-                        } else {
-                            upToDateMsg = true
-                        }
-                    }
-                },
-                enabled = !checkingUpdate
-            ) {
-                if (checkingUpdate) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(if (checkingUpdate) "Checking…" else "Check for Updates")
-            }
-            if (upToDateMsg) {
-                Text(
-                    "You're on the latest version!",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
             Spacer(Modifier.height(24.dp))
             Text(
                 text = "A simple VoIP client for Android.",
@@ -202,7 +118,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 text = "facebook.com/nazimunaeem1",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.clickable {
+                modifier = Modifier.clickableWithRipple {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://facebook.com/nazimunaeem1"))
                     context.startActivity(intent)
                 }
@@ -211,7 +127,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 text = "Telegram: t.me/IPDial",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.clickable {
+                modifier = Modifier.clickableWithRipple {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/IPDial"))
                     context.startActivity(intent)
                 }

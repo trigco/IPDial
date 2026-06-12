@@ -59,10 +59,14 @@ class ContactsRepository(private val context: Context) {
 
                     val existingContact = contactsMap[id]
                     if (existingContact != null) {
-                        if (number.isNotBlank() && !existingContact.numbers.contains(number)) {
-                            contactsMap[id] = existingContact.copy(numbers = existingContact.numbers + number)
+                        if (number.isNotBlank()) {
+                            val normalizedNew = number.filter { it.isDigit() }
+                            val alreadyHas = existingContact.numbers.any { it.filter { c -> c.isDigit() } == normalizedNew }
+                            if (!alreadyHas) {
+                                contactsMap[id] = existingContact.copy(numbers = existingContact.numbers + number)
+                            }
                         }
-                    } else {
+                    } else if (number.isNotBlank()) {
                         val photoUri = photoUriStr?.let { Uri.parse(it) }
                         contactsMap[id] = Contact(id, name, listOf(number), photoUri, isFavorite)
                     }

@@ -22,14 +22,19 @@ object TelecomHelper {
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
         val handle = getPhoneAccountHandle(context)
         
+        try {
+            telecomManager.unregisterPhoneAccount(handle)
+        } catch (e: Exception) {
+            android.util.Log.e("TelecomHelper", "Error unregistering phone account", e)
+        }
+        
         val extras = Bundle().apply {
             putBoolean(PhoneAccount.EXTRA_LOG_SELF_MANAGED_CALLS, false)
         }
         val phoneAccount = PhoneAccount.builder(handle, context.getString(R.string.app_name))
             .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
             .setShortDescription("SIP Calls via IPDial")
-            .addSupportedUriScheme(PhoneAccount.SCHEME_SIP)
-            .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
+            .addSupportedUriScheme("ipdial")
             .setExtras(extras)
             .build()
             
@@ -40,8 +45,9 @@ object TelecomHelper {
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
         val handle = getPhoneAccountHandle(context)
         
+        val cleanNumber = number.removePrefix("sip:")
         val extras = Bundle().apply {
-            putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, Uri.fromParts("sip", number, null))
+            putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, Uri.fromParts("ipdial", cleanNumber, null))
             putString(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, name)
         }
         
@@ -56,7 +62,8 @@ object TelecomHelper {
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
         val handle = getPhoneAccountHandle(context)
         
-        val uri = if (number.startsWith("sip:")) Uri.parse(number) else Uri.fromParts("sip", number, null)
+        val cleanNumber = number.removePrefix("sip:")
+        val uri = Uri.fromParts("ipdial", cleanNumber, null)
         
         // Put accountId in both the root extras and the outgoing call extras bundle for compatibility
         val extras = Bundle().apply {

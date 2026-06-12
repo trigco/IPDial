@@ -30,6 +30,7 @@ import coil.compose.AsyncImage
 import com.ipdial.data.model.*
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
+import com.ipdial.ui.NumberPickerDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -46,8 +47,10 @@ fun HomeScreen(
     val searchQuery by vm.searchQuery.collectAsState()
     val contactsState by vm.contacts.collectAsState()
     
-    var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Missed, 2: Dialed, 3: Received, 4: Contacts
-    val filterLabels = remember { listOf("History", "Missed", "Dialed", "Received", "Contacts") }
+    var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Contacts
+    val filterLabels = remember { listOf("History", "Contacts") }
+    var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
+    var activeHistoryEntryForDetail by remember { mutableStateOf<CallLogEntry?>(null) }
 
     // O(1) map for contact lookup by phone numbers (exact and last 10 digits for suffix matching)
     val contactLookupMap = remember(contactsState) {
@@ -67,7 +70,7 @@ fun HomeScreen(
     }
 
     val filteredContacts = remember(contactsState, searchQuery, filterIndex) {
-        if (filterIndex != 4) emptyList()
+        if (filterIndex != 1) emptyList()
         else contactsState.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
                     it.numbers.any { num -> num.contains(searchQuery) }
@@ -75,19 +78,12 @@ fun HomeScreen(
     }
 
     val filteredLog = remember(callLog, filterIndex, searchQuery) {
-        if (filterIndex == 4) return@remember emptyList()
+        if (filterIndex == 1) return@remember emptyList()
         callLog.filter { entry ->
             val matchesSearch = searchQuery.isBlank() || 
                 entry.remoteDisplayName.contains(searchQuery, ignoreCase = true) || 
                 entry.remoteUri.contains(searchQuery)
-            
-            val matchesFilter = when (filterIndex) {
-                1 -> entry.missed
-                2 -> entry.direction == CallDirection.OUTGOING
-                3 -> entry.direction == CallDirection.INCOMING && !entry.missed
-                else -> true
-            }
-            matchesSearch && matchesFilter
+            matchesSearch
         }
     }
 
@@ -124,7 +120,7 @@ fun HomeScreen(
             labels = filterLabels
         )
 
-        if (filterIndex == 4) {
+        if (filterIndex == 1) {
             val sortedContacts = remember(filteredContacts) {
                 filteredContacts.sortedBy { it.name.trim().lowercase() }
             }
@@ -153,7 +149,13 @@ fun HomeScreen(
                     items(sortedContacts, key = { it.id }) { contact ->
                         ContactItem(
                             contact = contact,
-                            onCall = { contact.numbers.firstOrNull()?.let { vm.makeCall(it) } },
+                            onCall = {
+                                if (contact.numbers.size > 1) {
+                                    activeContactForNumberPicker = contact
+                                } else {
+                                    contact.numbers.firstOrNull()?.let { vm.makeCall(it) }
+                                }
+                            },
                             onDetails = {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                                     data = android.net.Uri.withAppendedPath(
@@ -208,23 +210,51 @@ fun HomeScreen(
                                 }
                             }
                             val numberToCopy = cleanUri(entry.remoteUri).filter { it.isDigit() || it == '+' }
-                            CallLogRow(
-                                entry   = entry,
-                                account = accounts.firstOrNull { it.id == entry.accountId },
-                                contact = contact,
-                                onCall  = { vm.callBack(entry) },
-                                onCopy = {
-                                    clipboardManager.setText(AnnotatedString(numberToCopy))
-                                    Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
-                                },
-                                onEdit = { onEditBeforeCall(numberToCopy) },
-                                onDelete = { vm.deleteCallLog(entry) }
-                            )
+                             CallLogRow(
+                                 entry   = entry,
+                                 account = accounts.firstOrNull { it.id == entry.accountId },
+                                 contact = contact,
+                                 onClick = { activeHistoryEntryForDetail = entry },
+                                 onCall  = { vm.callBack(entry) },
+                                 onCopy = {
+                                     clipboardManager.setText(AnnotatedString(numberToCopy))
+                                     Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
+                                 },
+                                 onEdit = { onEditBeforeCall(numberToCopy) },
+                                 onDelete = { vm.deleteCallLog(entry) }
+                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    activeContactForNumberPicker?.let { contact ->
+        NumberPickerDialog(
+            numbers = contact.numbers,
+            onPick = { number -> vm.makeCall(number) },
+            onDismiss = { activeContactForNumberPicker = null }
+        )
+    }
+
+    activeHistoryEntryForDetail?.let { entry ->
+        val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
+        val contact = remember(cleanNumber, contactLookupMap) {
+            if (cleanNumber.isEmpty()) null
+            else if (cleanNumber.length >= 10) {
+                contactLookupMap[cleanNumber.takeLast(10)]
+            } else {
+                contactLookupMap[cleanNumber]
+            }
+        }
+        CallHistoryDetailDialog(
+            selectedEntry = entry,
+            allEntries = callLog,
+            contact = contact,
+            onCall = { vm.callBack(entry) },
+            onDismiss = { activeHistoryEntryForDetail = null }
+        )
     }
 }
 
@@ -322,6 +352,7 @@ fun CallLogRow(
     entry: CallLogEntry,
     account: SipAccount?,
     contact: Contact?,
+    onClick: () -> Unit,
     onCall: () -> Unit,
     onCopy: () -> Unit,
     onEdit: () -> Unit,
@@ -340,7 +371,7 @@ fun CallLogRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onCall,
+                    onClick = onClick,
                     onLongClick = { expanded = true }
                 )
                 .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -402,8 +433,9 @@ fun CallLogRow(
                         },
                         modifier = Modifier.size(14.dp)
                     )
+                    val durationSuffix = if (entry.missed) "" else " • ${formatDuration(entry.durationSeconds)}"
                     Text(
-                        text = "$viaLabel • $timeStr",
+                        text = "$viaLabel • $timeStr$durationSuffix",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -483,4 +515,159 @@ private fun formatTime(ms: Long): String {
         diffMin < 60  -> "${diffMin} min ago"
         else          -> SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(ms))
     }
+}
+
+
+
+@Composable
+fun CallHistoryDetailDialog(
+    selectedEntry: CallLogEntry,
+    allEntries: List<CallLogEntry>,
+    contact: Contact?,
+    onCall: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val cleanNumber = cleanUri(selectedEntry.remoteUri)
+    val displayName = contact?.name ?: selectedEntry.remoteDisplayName.ifBlank { cleanNumber }
+
+    // Filter calls in the last 7 days for this number
+    val sevenDaysAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+    val filteredHistory = remember(allEntries, selectedEntry) {
+        allEntries.filter {
+            cleanUri(it.remoteUri) == cleanNumber && it.timestampMs >= sevenDaysAgo
+        }.sortedByDescending { it.timestampMs }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (contact?.photoUri != null) {
+                        AsyncImage(
+                            model = contact.photoUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(
+                            text = (displayName.firstOrNull() ?: '?').uppercaseCharCompat(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+                Column {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (displayName != cleanNumber) {
+                        Text(
+                            text = cleanNumber,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+            ) {
+                Text(
+                    text = "Calls in the last 7 days",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                if (filteredHistory.isEmpty()) {
+                    Text(
+                        text = "No calls found",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredHistory) { entry ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = when {
+                                        entry.missed                           -> Icons.Default.CallMissed
+                                        entry.direction == CallDirection.INCOMING -> Icons.Default.CallReceived
+                                        else                                   -> Icons.Default.CallMade
+                                    },
+                                    contentDescription = null,
+                                    tint = when {
+                                        entry.missed -> MaterialTheme.colorScheme.error
+                                        else         -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val dateStr = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(entry.timestampMs))
+                                    Text(
+                                        text = dateStr,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    val callTypeText = when {
+                                        entry.missed -> "Missed"
+                                        entry.direction == CallDirection.INCOMING -> "Incoming"
+                                        else -> "Outgoing"
+                                    }
+                                    val durationStr = if (entry.missed) "" else " (${formatDuration(entry.durationSeconds)})"
+                                    Text(
+                                        text = "$callTypeText$durationStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onCall()
+                    onDismiss()
+                }
+            ) {
+                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Call")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }

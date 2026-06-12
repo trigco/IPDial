@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
+import com.ipdial.util.UpdateChecker
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +50,49 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         }
     }
 
+    // Current version from PackageManager
+    val currentVersion = remember {
+        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0" }
+        catch (e: Exception) { "1.0" }
+    }
+
+    // Update check state
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
+    // Update dialog
+    if (showUpdateDialog && updateRelease != null) {
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            icon = { Icon(Icons.Default.SystemUpdate, null) },
+            title = { Text("Update Available") },
+            text = {
+                Column {
+                    Text("Version ${updateRelease!!.tagName.trimStart('v')} is available.")
+                    if (updateRelease!!.body.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            updateRelease!!.body.take(300),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUpdateDialog = false
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.htmlUrl))
+                    context.startActivity(intent)
+                }) { Text("Download") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) { Text("Later") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
@@ -66,6 +110,37 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     DonationCardSmall(bkashNumber = "01728867695")
                 }
+            }
+
+            // ── Updates ───────────────────────────────────────────────────
+            item { SettingsSection("Updates") }
+
+            item {
+                SettingsRow(
+                    icon = Icons.Default.SystemUpdate,
+                    title = "Check for Updates",
+                    subtitle = if (checkingUpdate) "Checking…" else "Current version: $currentVersion",
+                    trailing = {
+                        if (checkingUpdate) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        }
+                    },
+                    onClick = {
+                        if (!checkingUpdate) {
+                            checkingUpdate = true
+                            scope.launch {
+                                val release = UpdateChecker.checkForUpdates(currentVersion)
+                                checkingUpdate = false
+                                if (release != null) {
+                                    updateRelease = release
+                                    showUpdateDialog = true
+                                } else {
+                                    android.widget.Toast.makeText(context, "You're on the latest version!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                )
             }
 
             // ── Audio ──────────────────────────────────────────────────────
@@ -174,7 +249,7 @@ fun SettingsRow(
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickableWithRipple { onClick() }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),

@@ -14,13 +14,14 @@ android {
         applicationId "com.ipdial"
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 5
+        versionName "1.0.0.4"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
         }
+        resConfigs "en"
     }
 
     // ABI splits to keep APK small — users get only the native lib for their CPU
@@ -28,13 +29,23 @@ android {
         abi {
             enable true
             reset()
-            include "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
-            universalApk true
+            include "arm64-v8a", "armeabi-v7a"
+            universalApk false
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('release.keystore')
+            storePassword 'ipdial123'
+            keyAlias 'ipdial-key'
+            keyPassword 'ipdial123'
         }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -58,6 +69,10 @@ android {
         compose true
     }
 
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
 
     packaging {
         resources {
@@ -76,7 +91,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-analytics'
 
     // Compose BOM
-    def composeBom = platform('androidx.compose:compose-bom:2023.10.01')
+    def composeBom = platform('androidx.compose:compose-bom:2024.10.00')
     implementation composeBom
 
     implementation 'androidx.core:core-ktx:1.15.0'

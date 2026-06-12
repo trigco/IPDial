@@ -258,7 +258,7 @@ fun CallControls(
             icon = if (session.isSpeaker) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
             label = "Speaker",
             active = session.isSpeaker,
-            enabled = isActive,
+            enabled = true,
             onClick = onSpeaker
         )
         CallControlButton(

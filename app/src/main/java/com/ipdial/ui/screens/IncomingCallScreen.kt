@@ -1,5 +1,6 @@
 package com.ipdial.ui.screens
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import coil.compose.AsyncImage
 import com.ipdial.data.model.CallSession
 import com.ipdial.ui.SipViewModel
@@ -120,28 +122,29 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             )
         }
 
-        Spacer(Modifier.height(48.dp))
-        
-        Box(
-            modifier = Modifier
-                .size(160.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            if (contact?.photoUri != null) {
-                AsyncImage(
-                    model = contact.photoUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(
-                    text = (displayName.firstOrNull() ?: '?').uppercaseCharCompat(),
-                    style = MaterialTheme.typography.displayLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+        if (!isFullScreenPhoto) {
+            Spacer(Modifier.height(48.dp))
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (contact?.photoUri != null) {
+                    AsyncImage(
+                        model = contact.photoUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        text = (displayName.firstOrNull() ?: '?').uppercaseCharCompat(),
+                        style = MaterialTheme.typography.displayLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
         }
 
@@ -165,28 +168,44 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                     .width(320.dp)
                     .height(80.dp)
                     .clip(RoundedCornerShape(40.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                    .background(
+                        if (isFullScreenPhoto)
+                            Color.White.copy(alpha = 0.2f)
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                // Background hints (Decline/Answer icons)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.CallEnd,
-                        contentDescription = null,
-                        tint = if (offsetX < -40) EndRed else EndRed.copy(alpha = 0.4f),
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Icon(
-                        Icons.Default.Call,
-                        contentDescription = null,
-                        tint = if (offsetX > 40) ForestGreen else ForestGreen.copy(alpha = 0.4f),
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+        // Background hints (Decline/Answer icons)
+        val infiniteTransition = rememberInfiniteTransition(label = "iconScale")
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "iconScale"
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.CallEnd,
+                contentDescription = null,
+                tint = if (offsetX < -40) EndRed else EndRed.copy(alpha = 0.4f),
+                modifier = Modifier.size(32.dp).let { if (offsetX <= 0) it.graphicsLayer(scaleX = scale, scaleY = scale) else it }
+            )
+            Icon(
+                Icons.Default.Call,
+                contentDescription = null,
+                tint = if (offsetX > 40) ForestGreen else ForestGreen.copy(alpha = 0.4f),
+                modifier = Modifier.size(32.dp).let { if (offsetX >= 0) it.graphicsLayer(scaleX = scale, scaleY = scale) else it }
+            )
+        }
 
                 // Rounded Phone Icon (Swiping Handle)
                 Box(

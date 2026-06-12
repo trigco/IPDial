@@ -6,6 +6,10 @@ import com.ipdial.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
 import org.pjsip.pjsua2.*
 
 /**
@@ -38,8 +42,11 @@ object SipEngine {
     private val _callSession = MutableStateFlow<CallSession?>(null)
     val callSession: StateFlow<CallSession?> = _callSession.asStateFlow()
 
-    private val _registrationEvents = MutableStateFlow<Pair<String, RegStatus>?>(null)
-    val registrationEvents: StateFlow<Pair<String, RegStatus>?> = _registrationEvents.asStateFlow()
+    private val _registrationEvents = MutableSharedFlow<Pair<String, RegStatus>>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val registrationEvents: SharedFlow<Pair<String, RegStatus>> = _registrationEvents.asSharedFlow()
 
     var onIncomingCall: ((CallSession) -> Unit)? = null
 
@@ -97,7 +104,7 @@ object SipEngine {
                     uaConfig.apply {
                         userAgent = "IPDial/1.0 (Android)"
                         maxCalls = 4
-                        stunServer.add("stun.l.google.com:19302")
+                        // stunServer.add("stun.l.google.com:19302")
                     }
                 }
                 libInit(epCfg)
@@ -146,7 +153,8 @@ object SipEngine {
                         existingConfig.agcEnabled != account.agcEnabled
 
                 if (!hasChanged) {
-                    log("Account ${account.id} configuration unchanged, skipping addAccount")
+                    log("Account ${account.id} configuration unchanged, triggering re-registration")
+                    reconnectAccount(account.id)
                     return
                 }
             }
@@ -226,6 +234,45 @@ object SipEngine {
             accountMap[accountId]?.setRegistration(true)
         } catch (e: Throwable) {
             log("reconnectAccount failed: ${e.message}", true)
+        }
+    }
+
+    /**
+     * Force-reconnect all accounts by removing and re-adding them.
+     * Use after network changes where underlying transports may be broken.
+     */
+    fun forceReconnectAll() {
+        registerCurrentThread()
+        try {
+            val configs = accountConfigs.values.toList()
+            configs.forEach { config ->
+                log("Force reconnecting account: ${config.id}")
+                try {
+                    accountMap[config.id]?.delete()
+                } catch (e: Throwable) {
+                    log("Error deleting account during force reconnect: ${e.message}", true)
+                }
+                accountMap.remove(config.id)
+                accountConfigs.remove(config.id)
+            }
+            configs.forEach { config ->
+                addAccount(config)
+            }
+        } catch (e: Throwable) {
+            log("forceReconnectAll failed: ${e.message}", true)
+        }
+    }
+
+    fun handleIpChange() {
+        registerCurrentThread()
+        val ep = endpoint ?: return
+        try {
+            log("Calling handleIpChange...")
+            val changeParam = IpChangeParam()
+            ep.handleIpChange(changeParam)
+            log("handleIpChange completed successfully")
+        } catch (e: Throwable) {
+            log("handleIpChange failed: ${e.message}", true)
         }
     }
 
@@ -438,6 +485,8 @@ object SipEngine {
             
             logWriter?.delete()
             logWriter = null
+            
+            registeredThreads.clear()
         } catch (e: Throwable) { }
     }
 
@@ -451,7 +500,7 @@ object SipEngine {
                     else -> RegStatus.UNREGISTERED
                 }
                 log("Account $accountId reg status: $status (code=${ai.regStatus}, reason=${ai.regStatusText})")
-                _registrationEvents.value = Pair(accountId, status)
+                _registrationEvents.tryEmit(Pair(accountId, status))
             } catch (e: Throwable) { }
         }
 

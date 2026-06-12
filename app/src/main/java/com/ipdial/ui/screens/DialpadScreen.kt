@@ -45,6 +45,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val suggestedContacts = remember(dialString, contacts) {
         if (dialString.isBlank()) emptyList()
@@ -128,6 +129,17 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     )
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    if (clipboardManager.hasText()) {
+                        DropdownMenuItem(
+                            text = { Text("Paste") },
+                            onClick = {
+                                showMenu = false
+                                clipboardManager.getText()?.text?.let { text ->
+                                    text.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                }
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Add to contact") },
                         onClick = { 
@@ -246,7 +258,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 .height(56.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(ForestGreen)
-                .clickable(enabled = dialString.isNotEmpty()) { 
+                .clickableWithRipple(enabled = dialString.isNotEmpty()) { 
                     vm.makeCall() 
                 }
         ) {
@@ -267,7 +279,7 @@ fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickableWithRipple { onClick() }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -301,11 +313,13 @@ fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = contact.numbers.firstOrNull() ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            contact.numbers.forEach { number ->
+                Text(
+                    text = number,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
