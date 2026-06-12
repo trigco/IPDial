@@ -24,8 +24,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Free Edition (Debug)
-        run: ./gradlew assembleFreeDebug
+      - name: Build Release APKs
+        run: ./gradlew assembleRelease
 
       - name: Get version
         id: get_version
@@ -39,28 +39,30 @@ jobs:
       - name: Prepare APKs
         run: |
           mkdir -p release_artifacts
-          # Free Edition APKs
-          find app/build/outputs/apk/free/debug/ -name "*universal-debug.apk" -exec cp {} release_artifacts/IPDial-Free-${{ steps.get_version.outputs.VERSION }}-universal.apk \;
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk release_artifacts/IPDial-${{ steps.get_version.outputs.VERSION }}-arm64-v8a.apk
+          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk release_artifacts/IPDial-${{ steps.get_version.outputs.VERSION }}-armeabi-v7a.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           tag_name: ${{ steps.get_version.outputs.VERSION }}
-          name: "IPDial Free ${{ steps.get_version.outputs.VERSION }}"
+          name: "IPDial Release ${{ steps.get_version.outputs.VERSION }}"
           body: |
-            ## 🚀 IPDial Free ${{ steps.get_version.outputs.VERSION }}
+            ## 🚀 IPDial ${{ steps.get_version.outputs.VERSION }}
             
-            This is the **Free Edition** of IPDial.
+            This is the production release of IPDial.
             
             ### ✨ Features
             - Modern VoIP interface
             - HD Audio support
-            - Single SIP account support
-            - Advanced Echo Cancellation
+            - Multi-account SIP support with auto-transport selection
+            - Advanced Echo Cancellation and Noise Suppression
             
             ### 📦 Installation
-            1. Download the **universal.apk** below.
+            1. Download the APK corresponding to your device's architecture:
+               - **arm64-v8a**: For modern 64-bit phones (recommended)
+               - **armeabi-v7a**: For older 32-bit phones
             2. Open the file on your Android device.
             3. If prompted, allow "Install from unknown sources".
           files: release_artifacts/*.apk
@@ -68,3 +70,4 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
