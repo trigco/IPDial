@@ -94,8 +94,6 @@ class SipService : Service() {
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setFullScreenIntent(fullscreenPi, true)
                 .setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePi, answerPi))
-                .addAction(R.drawable.ic_call_answer, answerText, answerPi)
-                .addAction(R.drawable.ic_call_end, declineText, declinePi)
                 .setAutoCancel(false)
                 .setOngoing(true)
                 .build()
@@ -146,9 +144,28 @@ class SipService : Service() {
                     if (isDnd) {
                         SipEngine.hangupCall(session.callId)
                     } else {
-                        // Report to Telecom for basic integration (busy signal, system call management)
-                        TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
-                        showIncomingCallNotification(session.remoteDisplayName, session.callId)
+                        // Resolve contact name or clean number
+                        var displayName = session.remoteDisplayName
+                        val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
+                        
+                        val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
+                        val contacts = kotlinx.coroutines.runBlocking { contactsRepo.getContacts("") }
+                        val cleanedSessionDigits = cleanNum.filter { it.isDigit() }
+                        
+                        var matchedContact: com.ipdial.data.model.Contact? = null
+                        if (cleanedSessionDigits.length >= 10) {
+                            matchedContact = contacts.find { c ->
+                                c.numbers.any { n ->
+                                    val cleanedContactDigits = n.filter { it.isDigit() }
+                                    cleanedContactDigits.length >= 10 && (cleanedSessionDigits.contains(cleanedContactDigits) || cleanedContactDigits.contains(cleanedSessionDigits))
+                                }
+                            }
+                        }
+                        
+                        val finalDisplayName = matchedContact?.name ?: if (cleanNum.isNotBlank()) cleanNum else displayName
+                        
+                        TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
+                        showIncomingCallNotification(finalDisplayName, session.callId)
                     }
                 }
             }
@@ -237,6 +254,12 @@ class SipService : Service() {
                 val callId = intent.getIntExtra("callId", -1)
                 SipEngine.answerCall(callId)
                 routeAudioToEarpiece()
+                cancelIncomingNotification()
+                // Launch MainActivity to show active call
+                val fullIntent = Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                startActivity(fullIntent)
             }
             ACTION_DECLINE -> {
                 val callId = intent.getIntExtra("callId", -1)

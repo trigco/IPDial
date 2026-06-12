@@ -22,6 +22,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalTextInputService
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,7 +41,8 @@ import com.ipdial.ui.theme.ForestGreen
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
-    val dialString by vm.dialString.collectAsState()
+    val dialTextFieldValue by vm.dialString.collectAsState()
+    val dialString = dialTextFieldValue.text
     val accounts by vm.accounts.collectAsState()
     val selectedId by vm.selectedAccountId.collectAsState()
     val contacts by vm.contacts.collectAsState()
@@ -80,6 +85,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             vm.clearDial()
                             contact.numbers.firstOrNull()?.let { num ->
                                 num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                vm.makeCall()
                             }
                         }
                     }
@@ -91,6 +97,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             vm.clearDial()
                             contact.numbers.firstOrNull()?.let { num ->
                                 num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                vm.makeCall()
                             }
                         }
                     }
@@ -154,17 +161,22 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 }
             }
 
-            Text(
-                text = dialString.ifEmpty { "" },
-                style = MaterialTheme.typography.displayMedium.copy(
-                    fontSize = if (dialString.length > 10) 28.sp else 40.sp,
-                    fontWeight = FontWeight.Light
-                ),
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-            )
+            CompositionLocalProvider(LocalTextInputService provides null) {
+                BasicTextField(
+                    value = dialTextFieldValue,
+                    onValueChange = { vm.setDialString(it) },
+                    textStyle = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = if (dialString.length > 10) 28.sp else 40.sp,
+                        fontWeight = FontWeight.Light,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center
+                    ),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                )
+            }
 
             AnimatedVisibility(visible = dialString.isNotEmpty()) {
                 Box(

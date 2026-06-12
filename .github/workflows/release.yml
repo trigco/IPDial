@@ -54,20 +54,26 @@ jobs:
           body: |
             ## 🚀 IPDial ${{ steps.get_version.outputs.VERSION }}
             
-            This is the production release of IPDial.
+            This is the first stable production release of IPDial!
             
             ### ✨ Features
-            - Modern VoIP interface
-            - HD Audio support
-            - Multi-account SIP support with auto-transport selection
-            - Advanced Echo Cancellation and Noise Suppression
+            - **Multi-Account SIP**: Add and manage multiple SIP profiles easily.
+            - **HD Audio**: Built-in Echo Cancellation, Noise Suppression, and AGC.
+            - **Calling Cards**: Immersive fullscreen contact photos during active calls.
+            - **Dark Mode**: Fully adaptive dark/light mode UI with Material You design.
+            - **Native Integration**: Incoming calls ring even when the phone is asleep or locked, just like a regular phone call.
+            - **Call Recording & Logging**: Keep track of and record your SIP conversations.
             
             ### 📦 Installation
             1. Download the APK corresponding to your device's architecture:
-               - **arm64-v8a**: For modern 64-bit phones (recommended)
+               - **arm64-v8a**: For modern 64-bit phones (recommended for most users)
                - **armeabi-v7a**: For older 32-bit phones
             2. Open the file on your Android device.
-            3. If prompted, allow "Install from unknown sources".
+            3. If prompted, allow "Install from unknown sources" or "Install from this source".
+            
+            > **⚠️ Note on Google Play Protect:**
+            > Because this app is sideloaded and not yet published on the Play Store, Google Play Protect may show a warning ("Unsafe app blocked").
+            > To install, tap **More details** and then select **Install anyway**.
           files: release_artifacts/*.apk
           draft: false
           prerelease: false

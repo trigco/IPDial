@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -65,8 +67,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     // Dialer state
-    private val _dialString = MutableStateFlow("")
-    val dialString: StateFlow<String> = _dialString.asStateFlow()
+    private val _dialString = MutableStateFlow(TextFieldValue(""))
+    val dialString: StateFlow<TextFieldValue> = _dialString.asStateFlow()
 
     private val _selectedAccountId = MutableStateFlow<String?>(null)
     val selectedAccountId: StateFlow<String?> = _selectedAccountId.asStateFlow()
@@ -136,7 +138,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             callSession.map { it == null }.distinctUntilChanged().collect { isNull ->
                 if (isNull) {
-                    _dialString.value = ""
+                    _dialString.value = TextFieldValue("")
                 }
             }
         }
@@ -157,21 +159,40 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setDialString(value: TextFieldValue) {
+        _dialString.value = value
+    }
+
     fun dialPad(char: Char) {
-        _dialString.value += char
+        val current = _dialString.value
+        val text = current.text
+        val selection = current.selection
+        val newText = text.substring(0, selection.start) + char + text.substring(selection.end)
+        val newSelection = selection.start + 1
+        _dialString.value = TextFieldValue(text = newText, selection = TextRange(newSelection))
         if (callSession.value?.state == CallState.CONFIRMED) {
             SipEngine.sendDtmf(char)
         }
     }
 
     fun backspace() {
-        val s = _dialString.value
-        if (s.isNotEmpty()) _dialString.value = s.dropLast(1)
+        val current = _dialString.value
+        val text = current.text
+        val selection = current.selection
+        if (selection.start != selection.end) {
+            val min = minOf(selection.start, selection.end)
+            val max = maxOf(selection.start, selection.end)
+            val newText = text.substring(0, min) + text.substring(max)
+            _dialString.value = TextFieldValue(text = newText, selection = TextRange(min))
+        } else if (selection.start > 0) {
+            val newText = text.substring(0, selection.start - 1) + text.substring(selection.start)
+            _dialString.value = TextFieldValue(text = newText, selection = TextRange(selection.start - 1))
+        }
     }
 
-    fun clearDial() { _dialString.value = "" }
+    fun clearDial() { _dialString.value = TextFieldValue("") }
 
-    fun prefillDialer(number: String) { _dialString.value = number }
+    fun prefillDialer(number: String) { _dialString.value = TextFieldValue(number, TextRange(number.length)) }
 
     fun deleteCallLog(entry: CallLogEntry) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -182,7 +203,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     fun selectAccount(id: String) { _selectedAccountId.value = id }
 
     fun makeCall(overrideNumber: String? = null) {
-        val rawInput = (overrideNumber ?: _dialString.value).trim()
+        val rawInput = (overrideNumber ?: _dialString.value.text).trim()
         if (rawInput.isBlank()) {
             Toast.makeText(getApplication(), "Please enter a number", Toast.LENGTH_SHORT).show()
             return

@@ -21,6 +21,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -95,7 +97,9 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "Incoming Call via $viaLine",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
+                ),
                 color = subtitleColor,
             )
         }
@@ -106,7 +110,8 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             text = displayName,
             style = MaterialTheme.typography.displayMedium.copy(
                 fontWeight = FontWeight.Normal,
-                fontSize = 34.sp
+                fontSize = 34.sp,
+                shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
             ),
             textAlign = TextAlign.Center,
             color = textColor,
@@ -117,7 +122,9 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             Spacer(Modifier.height(8.dp))
             Text(
                 text = vm.cleanUri(session.remoteUri),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
+                ),
                 color = subtitleColor
             )
         }

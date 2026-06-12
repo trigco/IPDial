@@ -14,7 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -107,7 +109,9 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = simLabel,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
+                    ),
                     color = subtitleColor,
                 )
                 if (session.state == CallState.CONFIRMED) {
@@ -127,7 +131,8 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 text = displayName,
                 style = MaterialTheme.typography.displayMedium.copy(
                     fontWeight = FontWeight.Normal,
-                    fontSize = if (displayName.length > 16) 28.sp else 36.sp
+                    fontSize = if (displayName.length > 16) 28.sp else 36.sp,
+                    shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
                 ),
                 color = textColor,
                 textAlign = TextAlign.Center,
@@ -138,7 +143,9 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = vm.cleanUri(session.remoteUri),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
+                    ),
                     color = subtitleColor,
                 )
             }
@@ -150,7 +157,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             }
 
             // Avatar circle
-            if (contact?.photoUri != null) {
+            if (!isFullScreenPhoto && contact?.photoUri != null) {
                 Spacer(Modifier.height(32.dp))
                 Box(
                     modifier = Modifier
@@ -374,7 +381,9 @@ fun PulsingStateLabel(state: CallState) {
     )
     Text(
         text = label,
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodyMedium.copy(
+            shadow = Shadow(Color.Black, Offset(1f, 1f), 4f)
+        ),
         color = Color.White.copy(alpha = alpha),
     )
 }
