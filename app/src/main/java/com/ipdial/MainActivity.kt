@@ -107,8 +107,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: SipViewModel = viewModel()
             val darkMode by vm.darkModeEnabled.collectAsState()
+            val fontMultiplier by vm.fontSizeMultiplier.collectAsState()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-            IPDialTheme(darkTheme = darkMode || systemDark) {
+            IPDialTheme(
+                darkTheme = darkMode || systemDark,
+                fontMultiplier = fontMultiplier
+            ) {
                 IPDialApp(testCallNumber, triggerHangup)
             }
         }
@@ -278,7 +282,11 @@ fun IPDialApp(
                             selected = currentRoute == NavDest.Accounts.route,
                             onClick = {
                                 scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Accounts.route)
+                                navController.navigate(NavDest.Accounts.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             },
                             icon = { Icon(NavDest.Accounts.icon, null) }
                         )
@@ -288,7 +296,11 @@ fun IPDialApp(
                             selected = currentRoute == NavDest.Recordings.route,
                             onClick = {
                                 scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Recordings.route)
+                                navController.navigate(NavDest.Recordings.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             },
                             icon = { Icon(NavDest.Recordings.icon, null) }
                         )
@@ -299,7 +311,11 @@ fun IPDialApp(
                             selected = currentRoute == NavDest.Settings.route,
                             onClick = {
                                 scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Settings.route)
+                                navController.navigate(NavDest.Settings.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             },
                             icon = { Icon(NavDest.Settings.icon, null) }
                         )
@@ -309,7 +325,11 @@ fun IPDialApp(
                             selected = currentRoute == NavDest.About.route,
                             onClick = {
                                 scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.About.route)
+                                navController.navigate(NavDest.About.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             },
                             icon = { Icon(NavDest.About.icon, null) }
                         )

@@ -28,7 +28,7 @@ IPDial is an open-source project. If you find this project useful, consider supp
 **NAZIM U. NAEEM**
 
 [![Facebook](https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white)](https://facebook.com/nazimunaeem1)
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/IPCall)
+[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/IPDial)
 
 ### ☕ Support the Development
 > "Fuelling innovation one sip at a time. Support the development and help us keep the lines open!"

@@ -92,25 +92,25 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-        Spacer(Modifier.height(64.dp))
+        Spacer(Modifier.height(80.dp)) // Increased from 64
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "Incoming Call via $viaLine",
-                style = MaterialTheme.typography.bodyMedium.copy(
+                style = MaterialTheme.typography.titleMedium.copy( // Increased from bodyMedium
                     shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
                 ),
                 color = subtitleColor,
             )
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(40.dp)) // Increased from 32
 
         Text(
             text = displayName,
             style = MaterialTheme.typography.displayMedium.copy(
-                fontWeight = FontWeight.Normal,
-                fontSize = 34.sp,
+                fontWeight = FontWeight.SemiBold, // Increased weight
+                fontSize = 40.sp, // Increased from 34
                 shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
             ),
             textAlign = TextAlign.Center,
@@ -119,10 +119,10 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
         )
 
         if (displayName != vm.cleanUri(session.remoteUri)) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp)) // Increased from 8
             Text(
                 text = vm.cleanUri(session.remoteUri),
-                style = MaterialTheme.typography.bodyMedium.copy(
+                style = MaterialTheme.typography.titleLarge.copy( // Increased from bodyMedium
                     shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
                 ),
                 color = subtitleColor

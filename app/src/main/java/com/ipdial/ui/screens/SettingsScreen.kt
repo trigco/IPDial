@@ -18,6 +18,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import com.ipdial.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
@@ -34,7 +38,27 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     val accounts by vm.accounts.collectAsState()
     val globalRingtone by vm.globalRingtone.collectAsState()
     val activeAccount by vm.activeAccount.collectAsState()
+    val fontSizeMultiplier by vm.fontSizeMultiplier.collectAsState()
+    val appIconAlias by vm.appIconAlias.collectAsState()
+    val keypadDesign by vm.keypadDesign.collectAsState()
     
+    var showRestartDialog by remember { mutableStateOf(false) }
+
+    if (showRestartDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestartDialog = false },
+            title = { Text("Restart Required") },
+            text = { Text("The app icon has been updated. Please restart the app or check your home screen after a few seconds to see the change.") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showRestartDialog = false
+                    // Force exit to help launcher pick up change on some devices
+                    (context as? Activity)?.finishAffinity()
+                }) { Text("OK") }
+            }
+        )
+    }
+
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -53,6 +77,98 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showCodecDialog by remember { mutableStateOf(false) }
+    var showFontSizeDialog by remember { mutableStateOf(false) }
+    var showAppIconDialog by remember { mutableStateOf(false) }
+
+    if (showFontSizeDialog) {
+        AlertDialog(
+            onDismissRequest = { showFontSizeDialog = false },
+            title = { Text("Select Font Size") },
+            text = {
+                Column {
+                    listOf("Small" to 0.85f, "Normal" to 1.0f, "Large" to 1.15f, "Extra Large" to 1.3f).forEach { (label, multiplier) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                vm.setFontSize(multiplier)
+                                vm.triggerAd(context) // Trigger ad for font size change
+                                showFontSizeDialog = false
+                            }.padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = fontSizeMultiplier == multiplier, onClick = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (showAppIconDialog) {
+        AlertDialog(
+            onDismissRequest = { showAppIconDialog = false },
+            title = { Text("Choose App Icon") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    val icons = listOf<Pair<String, Int>>(
+                        "Default" to R.drawable.ic_launcher_foreground,
+                        "Green" to R.drawable.ic_phone_green,
+                        "Blue" to R.drawable.ic_phone_blue,
+                        "Red" to R.drawable.ic_phone_red
+                    )
+                    
+                    icons.chunked(2).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            row.forEach { (alias, resId) ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (appIconAlias == alias) MaterialTheme.colorScheme.primaryContainer 
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        )
+                                        .clickable {
+                                            vm.setAppIcon(alias)
+                                            com.ipdial.util.AppIconHelper.setAppIcon(context, alias)
+                                            vm.triggerAd(context)
+                                            showAppIconDialog = false
+                                            showRestartDialog = true
+                                        }
+                                        .padding(12.dp)
+                                ) {
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(resId),
+                                        contentDescription = alias,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = alias,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = if (appIconAlias == alias) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                            if (row.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     if (showUpdateDialog && updateRelease != null) {
         AlertDialog(
@@ -122,7 +238,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         ) {
             item {
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    DonationCardSmall(bkashNumber = "01728867695")
+                    TelegramSupportCard()
                 }
             }
 
@@ -160,12 +276,12 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 
                 SettingsRow(
                     icon = Icons.Default.NotificationsActive,
-                    title = "Global Ringtone",
+                    title = "Ringtone",
                     subtitle = ringtoneName,
                     onClick = { 
                         val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Global Ringtone")
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Ringtone")
                             putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, globalRingtone?.let { Uri.parse(it) })
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
@@ -190,7 +306,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             item {
                 SettingsRow(
                     icon = Icons.Default.Audiotrack,
-                    title = "Preferred Codec",
+                    title = "Select Audio Codec",
                     subtitle = activeAccount?.codec?.name ?: "Select Codec",
                     onClick = {
                         vm.onCodecAction(context)
@@ -204,6 +320,50 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             }
 
             item { SettingsSection("General") }
+            item {
+                SettingsRow(
+                    icon = Icons.Default.TextFields,
+                    title = "Font Size",
+                    subtitle = when(fontSizeMultiplier) {
+                        0.85f -> "Small"
+                        1.15f -> "Large"
+                        1.3f -> "Extra Large"
+                        else -> "Normal"
+                    },
+                    onClick = { showFontSizeDialog = true }
+                )
+            }
+
+            item {
+                SettingsRow(
+                    icon = Icons.Default.GridOn,
+                    title = "Keypad Design",
+                    subtitle = if (keypadDesign == "Rounded") "Fully Rounded" else "Grid",
+                    trailing = { 
+                        Switch(
+                            checked = keypadDesign == "Rounded", 
+                            onCheckedChange = { 
+                                vm.setKeypadDesign(if (it) "Rounded" else "Grid")
+                                vm.triggerAd(context) // Trigger ad for keypad design toggle
+                            }
+                        ) 
+                    },
+                    onClick = { 
+                        vm.setKeypadDesign(if (keypadDesign == "Rounded") "Grid" else "Rounded")
+                        vm.triggerAd(context) // Trigger ad for keypad design toggle
+                    }
+                )
+            }
+
+            item {
+                SettingsRow(
+                    icon = Icons.Default.Brush,
+                    title = "Choose App Icon",
+                    subtitle = appIconAlias,
+                    onClick = { showAppIconDialog = true }
+                )
+            }
+
             item {
                 val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
                 SettingsRow(

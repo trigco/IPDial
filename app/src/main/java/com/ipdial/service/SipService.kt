@@ -373,16 +373,29 @@ class SipService : Service() {
     private var lastSession: com.ipdial.data.model.CallSession? = null
     
     private var ringtone: Ringtone? = null
+    private var mediaPlayer: android.media.MediaPlayer? = null
 
     private fun playRingtone() {
-        if (ringtone?.isPlaying == true) return
+        if (ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) return
         try {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            ringtone = RingtoneManager.getRingtone(applicationContext, uri)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ringtone?.isLooping = true
+            val ringtoneUriStr = kotlinx.coroutines.runBlocking {
+                repo.globalRingtone.first()
             }
-            ringtone?.play()
+            
+            if (ringtoneUriStr == "android.resource://${packageName}/raw/ipdial_ringtone") {
+                mediaPlayer = android.media.MediaPlayer.create(applicationContext, R.raw.ipdial_ringtone)
+                mediaPlayer?.isLooping = true
+                mediaPlayer?.start()
+            } else {
+                val ringtoneUri = ringtoneUriStr?.let { android.net.Uri.parse(it) }
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                
+                ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ringtone?.isLooping = true
+                }
+                ringtone?.play()
+            }
             
             // Vibrate if setting is enabled
             kotlinx.coroutines.runBlocking {
@@ -404,6 +417,9 @@ class SipService : Service() {
         try {
             ringtone?.stop()
             ringtone = null
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+            mediaPlayer = null
             vibrator?.cancel()
         } catch (e: Exception) {}
     }

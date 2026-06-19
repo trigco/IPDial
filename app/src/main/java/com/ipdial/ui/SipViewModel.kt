@@ -60,10 +60,23 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val globalVibrate: StateFlow<Boolean> = repo.globalVibrate
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val fontSizeMultiplier: StateFlow<Float> = repo.fontSizeMultiplier
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 1.0f)
+        
+    val appIconAlias: StateFlow<String> = repo.appIconAlias
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
+        
+    val keypadDesign: StateFlow<String> = repo.keypadDesign
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "Grid")
+
     fun setDarkMode(enabled: Boolean) = viewModelScope.launch { repo.setDarkMode(enabled) }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
     fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
     fun setGlobalVibrate(enabled: Boolean) = viewModelScope.launch { repo.setGlobalVibrate(enabled) }
+    
+    fun setFontSize(multiplier: Float) = viewModelScope.launch { repo.setFontSizeMultiplier(multiplier) }
+    fun setAppIcon(alias: String) = viewModelScope.launch { repo.setAppIconAlias(alias) }
+    fun setKeypadDesign(design: String) = viewModelScope.launch { repo.setKeypadDesign(design) }
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -433,11 +446,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         val host = account.domain
         if (host != "sip.amarip.net" && host != "103.170.231.10") return
 
-        balanceCheckCount++
-        if (balanceCheckCount > 2) { // Faster ad: after 2 checks instead of 5
-            triggerAd(context)
-            return
-        }
+        triggerAd(context)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {

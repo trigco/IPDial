@@ -60,7 +60,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             // ── Donation ──────────────────────────────────────────────────
             item {
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    DonationCardSmall(bkashNumber = "01728867695")
+                    TelegramSupportCard()
                 }
             }
 

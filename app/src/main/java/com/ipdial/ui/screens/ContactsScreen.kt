@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -126,21 +127,42 @@ fun ContactItem(contact: Contact, onCall: () -> Unit, onDetails: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickableWithRipple { onDetails() }
-            .padding(16.dp),
+            .padding(vertical = 8.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
             if (contact.photoUri != null) {
-                AsyncImage(model = contact.photoUri, contentDescription = null, modifier = Modifier.fillMaxSize())
+                AsyncImage(
+                    model = contact.photoUri,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
             } else {
                 Text(contact.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
             }
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
-            Text(contact.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-            contact.numbers.forEach { number ->
-                Text(number, style = MaterialTheme.typography.bodySmall)
-            }
+            Text(
+                text = contact.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            val numberText = remember(contact.numbers) { contact.numbers.joinToString(", ") }
+            Text(
+                text = numberText,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
         IconButton(onClick = onCall) {
             Icon(Icons.Default.Call, "Call", tint = MaterialTheme.colorScheme.primary)

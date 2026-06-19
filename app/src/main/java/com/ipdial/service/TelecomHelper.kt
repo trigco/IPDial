@@ -30,6 +30,8 @@ object TelecomHelper {
         
         val extras = Bundle().apply {
             putBoolean(PhoneAccount.EXTRA_LOG_SELF_MANAGED_CALLS, false)
+            // Use string literal if constant is missing in current API level context
+            putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
         }
         val phoneAccount = PhoneAccount.builder(handle, context.getString(R.string.app_name))
             .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)

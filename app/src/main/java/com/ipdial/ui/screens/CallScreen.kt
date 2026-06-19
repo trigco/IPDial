@@ -103,27 +103,27 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(64.dp)) // Increased from 48
 
             // Via label
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = simLabel,
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy( // Increased from bodyMedium
                         shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
                     ),
                     color = subtitleColor,
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp)) // Increased from 8
 
             // Caller name / number
             Text(
                 text = displayName,
                 style = MaterialTheme.typography.displayMedium.copy(
-                    fontWeight = FontWeight.Normal,
-                    fontSize = if (displayName.length > 16) 28.sp else 36.sp,
+                    fontWeight = FontWeight.SemiBold, // Increased weight
+                    fontSize = if (displayName.length > 16) 32.sp else 42.sp, // Increased from 28/36
                     shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
                 ),
                 color = textColor,
@@ -132,10 +132,10 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             )
 
             if (displayName != vm.cleanUri(session.remoteUri)) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp)) // Increased from 4
                 Text(
                     text = vm.cleanUri(session.remoteUri),
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = MaterialTheme.typography.titleMedium.copy( // Increased from bodyMedium
                         shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
                     ),
                     color = subtitleColor,
@@ -143,11 +143,11 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             }
 
             // State label (ringing / connecting) / Duration
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp)) // Increased from 8
             if (session.state == CallState.CONFIRMED) {
                 Text(
                     text = formatDuration(elapsedSeconds),
-                    style = MaterialTheme.typography.bodyLarge.copy(
+                    style = MaterialTheme.typography.headlineMedium.copy( // Increased from bodyLarge
                         fontWeight = FontWeight.Bold,
                         shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
                     ),
@@ -382,7 +382,7 @@ fun PulsingStateLabel(state: CallState) {
     )
     Text(
         text = label,
-        style = MaterialTheme.typography.bodyMedium.copy(
+        style = MaterialTheme.typography.titleLarge.copy( // Increased from bodyMedium
             shadow = Shadow(Color.Black, Offset(1f, 1f), 4f)
         ),
         color = Color.White.copy(alpha = alpha),

@@ -55,12 +55,29 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun IPDialTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    fontMultiplier: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
     val colors = if (darkTheme) DarkColors else LightColors
+    
+    val scaledTypography = if (fontMultiplier != 1.0f) {
+        Typography(
+            displayLarge = IPDialTypography.displayLarge.copy(fontSize = IPDialTypography.displayLarge.fontSize * fontMultiplier),
+            displayMedium = IPDialTypography.displayMedium.copy(fontSize = IPDialTypography.displayMedium.fontSize * fontMultiplier),
+            headlineLarge = IPDialTypography.headlineLarge.copy(fontSize = IPDialTypography.headlineLarge.fontSize * fontMultiplier),
+            headlineMedium = IPDialTypography.headlineMedium.copy(fontSize = IPDialTypography.headlineMedium.fontSize * fontMultiplier),
+            titleLarge = IPDialTypography.titleLarge.copy(fontSize = IPDialTypography.titleLarge.fontSize * fontMultiplier),
+            titleMedium = IPDialTypography.titleMedium.copy(fontSize = IPDialTypography.titleMedium.fontSize * fontMultiplier),
+            bodyLarge = IPDialTypography.bodyLarge.copy(fontSize = IPDialTypography.bodyLarge.fontSize * fontMultiplier),
+            bodyMedium = IPDialTypography.bodyMedium.copy(fontSize = IPDialTypography.bodyMedium.fontSize * fontMultiplier),
+            labelLarge = IPDialTypography.labelLarge.copy(fontSize = IPDialTypography.labelLarge.fontSize * fontMultiplier),
+            labelMedium = IPDialTypography.labelMedium.copy(fontSize = IPDialTypography.labelMedium.fontSize * fontMultiplier),
+        )
+    } else IPDialTypography
+
     MaterialTheme(
         colorScheme = colors,
-        typography  = IPDialTypography,
+        typography  = scaledTypography,
         shapes      = IPDialShapes,
         content     = content
     )

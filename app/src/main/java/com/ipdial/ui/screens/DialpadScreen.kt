@@ -49,6 +49,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val selectedId by vm.selectedAccountId.collectAsState()
     val contacts by vm.contacts.collectAsState()
     val mostCalled by vm.mostCalledContacts.collectAsState()
+    val keypadDesign by vm.keypadDesign.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
@@ -193,8 +194,8 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     value = dialTextFieldValue,
                     onValueChange = { vm.setDialString(it) },
                     textStyle = MaterialTheme.typography.displayMedium.copy(
-                        fontSize = if (dialString.length > 10) 28.sp else 40.sp,
-                        fontWeight = FontWeight.Light,
+                        fontSize = if (dialString.length > 10) 32.sp else 48.sp, // Increased from 28/40
+                        fontWeight = FontWeight.Normal, // Increased from Light
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     ),
@@ -247,44 +248,79 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             Triple("#", "", null),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 0.dp)
-                .background(MaterialTheme.colorScheme.surface)
-        ) {
-            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            keys.chunked(3).forEach { row ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min)
-                ) {
-                    row.forEachIndexed { colIndex, (digit, sub, _) ->
-                        DialKey(
-                            digit = digit,
-                            subLabel = sub,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                vm.dialPad(digit[0])
-                            },
-                            onLongClick = if (digit == "0") {
-                                {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    vm.dialPad('+')
-                                }
-                            } else null,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (colIndex < 2) {
-                            Divider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.fillMaxHeight().width(1.dp)
+        if (keypadDesign == "Rounded") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp) // Narrower for iOS look
+            ) {
+                keys.chunked(3).forEach { row ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp), // Fixed height regardless of font size
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        row.forEach { (digit, sub, _) ->
+                            DialKeyRounded(
+                                digit = digit,
+                                subLabel = sub,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    vm.dialPad(digit[0])
+                                },
+                                onLongClick = if (digit == "0") {
+                                    {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        vm.dialPad('+')
+                                    }
+                                } else null,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
                 }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 0.dp)
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
                 Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                keys.chunked(3).forEach { row ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp) // Fixed height regardless of font size
+                    ) {
+                        row.forEachIndexed { colIndex, (digit, sub, _) ->
+                            DialKey(
+                                digit = digit,
+                                subLabel = sub,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    vm.dialPad(digit[0])
+                                },
+                                onLongClick = if (digit == "0") {
+                                    {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        vm.dialPad('+')
+                                    }
+                                } else null,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (colIndex < 2) {
+                                Divider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.fillMaxHeight().width(1.dp)
+                                )
+                            }
+                        }
+                    }
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                }
             }
         }
 
@@ -370,6 +406,55 @@ fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun DialKeyRounded(
+    digit: String,
+    subLabel: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = CircleShape,
+        color = if (androidx.compose.foundation.isSystemInDarkTheme()) 
+            Color.White.copy(alpha = 0.2f) 
+        else 
+            Color.Black.copy(alpha = 0.08f),
+        modifier = modifier
+            .aspectRatio(1f) // iOS keys are perfectly circular
+            .padding(4.dp) // Add space between keys for iOS look
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = digit,
+                    style = MaterialTheme.typography.displaySmall.copy( // Larger for iOS look
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 32.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (subLabel.isNotBlank() && digit.any { it.isDigit() }) {
+                    Text(
+                        text = subLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                        fontSize = 10.sp
+                    )
+                }
             }
         }
     }

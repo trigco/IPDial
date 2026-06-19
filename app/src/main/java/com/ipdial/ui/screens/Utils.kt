@@ -8,7 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -45,48 +47,42 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
 fun Char.uppercaseCharCompat(): String = this.uppercaseChar().toString()
 
 @Composable
-fun DonationCardSmall(bkashNumber: String) {
-    val clipboardManager = LocalClipboardManager.current
+fun TelegramSupportCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable {
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://t.me/IPDial"))
+            context.startActivity(intent)
+        },
         shape = MaterialTheme.shapes.small
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Enjoying IPDial? ☕",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Support the developer's sleepless nights with a donation!",
-                    style = MaterialTheme.typography.bodySmall,
-                    lineHeight = 16.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "bKash: $bkashNumber",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            IconButton(
-                onClick = { clipboardManager.setText(AnnotatedString(bkashNumber)) },
-                modifier = Modifier.size(32.dp).padding(start = 8.dp)
+            Text(
+                text = "Join our Telegram channel for support and updates!",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                shape = CircleShape,
+                modifier = Modifier.size(36.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Telegram",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

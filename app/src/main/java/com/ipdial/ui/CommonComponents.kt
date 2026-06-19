@@ -72,14 +72,14 @@ fun RegStatusIndicator(accounts: List<SipAccount>, vm: SipViewModel? = null) {
                 )
             }
             if (activeAccount != null) {
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(6.dp)) // Increased from 4
                 Text(
                     text = activeAccount.displayName,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp), // Increased from 9.sp
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 120.dp)
+                    modifier = Modifier.widthIn(max = 140.dp) // Increased from 120
                 )
             }
         }
@@ -106,13 +106,8 @@ fun RegStatusIndicator(accounts: List<SipAccount>, vm: SipViewModel? = null) {
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
                     .clickable {
-                        if (!isRevealing) {
-                            vm.fetchBalance(activeAccount, context)
-                            isRevealing = true
-                        } else {
-                            // Unreveal manually if clicked while showing
-                            isRevealing = false
-                        }
+                        vm.fetchBalance(activeAccount, context)
+                        isRevealing = true
                     }
                     .padding(horizontal = 6.dp, vertical = 2.dp)
                     .widthIn(min = 60.dp),
@@ -164,7 +159,7 @@ fun IPDialTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .height(48.dp)
+                .height(56.dp)
         ) {
             // Left: Status Dot & Name
             Box(
