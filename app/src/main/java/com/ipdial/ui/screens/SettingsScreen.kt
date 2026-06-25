@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -13,12 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import com.ipdial.R
@@ -63,14 +64,32 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            val uri = result.data?.let { intent ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+                }
+            }
             scope.launch { vm.repo.setGlobalRingtone(uri?.toString()) }
         }
     }
 
     val currentVersion = remember {
-        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0" }
-        catch (e: Exception) { "1.0" }
+        try {
+            val pm = context.packageManager
+            val pkgName = context.packageName
+            if (pm != null && pkgName != null) {
+                pm.getPackageInfo(pkgName, 0)?.versionName ?: "1.0"
+            } else {
+                "1.0"
+            }
+        }
+        catch (e: Exception) {
+            Log.e("SettingsScreen", "Failed to get version", e)
+            "1.0"
+        }
     }
 
     var checkingUpdate by remember { mutableStateOf(false) }
@@ -115,7 +134,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val icons = listOf<Pair<String, Int>>(
+                    val icons = listOf(
                         "Default" to R.drawable.ic_launcher_foreground,
                         "Green" to R.drawable.ic_phone_green,
                         "Blue" to R.drawable.ic_phone_blue,
@@ -203,13 +222,15 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             title = { Text("Select Preferred Codec") },
             text = {
                 Column {
-                    PreferredCodec.values().forEach { codec ->
+                    PreferredCodec.entries.forEach { codec ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                val updated = activeAccount!!.copy(codec = codec)
-                                vm.saveAccount(updated)
-                                showCodecDialog = false
-                                vm.dismissAd()
+                                activeAccount?.let { account ->
+                                    val updated = account.copy(codec = codec)
+                                    vm.saveAccount(updated)
+                                    showCodecDialog = false
+                                    vm.dismissAd()
+                                }
                             }.padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -270,7 +291,11 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             item { SettingsSection("Audio") }
             item {
                 val ringtoneName = if (globalRingtone != null) {
-                    try { RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context) }
+                    try {
+                        globalRingtone?.let { uri ->
+                            RingtoneManager.getRingtone(context, Uri.parse(uri))?.getTitle(context)
+                        } ?: "Default"
+                    }
                     catch (_: Exception) { "Default" }
                 } else "Default"
                 
@@ -400,7 +425,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             item { SettingsSection("System") }
             item {
                 SettingsRow(
-                    icon = Icons.Default.List,
+                    icon = Icons.AutoMirrored.Filled.List,
                     title = "Activity Log",
                     subtitle = "View full system activity logs",
                     onClick = { onNavigateToLogs() }
@@ -461,7 +486,7 @@ fun SettingsRow(
             }
             trailing?.invoke()
         }
-        Divider(
+        HorizontalDivider(
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
             modifier = Modifier.padding(start = 56.dp)
         )

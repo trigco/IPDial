@@ -65,6 +65,7 @@ object SipEngine {
 
     private fun registerCurrentThread() {
         val ep = endpoint ?: return
+        @Suppress("DEPRECATION")
         val threadId = Thread.currentThread().id
         if (registeredThreads.contains(threadId)) {
             return
@@ -493,7 +494,17 @@ object SipEngine {
     class PjAccount(private val accountId: String) : Account() {
         override fun onRegState(prm: OnRegStateParam) {
             try {
-                val ai = info
+                // Protect against null reference when object is being destroyed
+                val ai = try { info } catch (e: Throwable) {
+                    log("Account $accountId info retrieval failed during onRegState: ${e.message}", true)
+                    return
+                }
+
+                if (ai == null) {
+                    log("Account $accountId info is null during onRegState", true)
+                    return
+                }
+
                 val status = when {
                     ai.regIsActive -> RegStatus.REGISTERED
                     ai.regStatus >= 300 -> RegStatus.ERROR
@@ -501,7 +512,9 @@ object SipEngine {
                 }
                 log("Account $accountId reg status: $status (code=${ai.regStatus}, reason=${ai.regStatusText})")
                 _registrationEvents.tryEmit(Pair(accountId, status))
-            } catch (e: Throwable) { }
+            } catch (e: Throwable) {
+                log("onRegState failed for account $accountId: ${e.message}", true)
+            }
         }
 
         override fun onIncomingCall(prm: OnIncomingCallParam) {
@@ -518,26 +531,53 @@ object SipEngine {
                     throw e
                 }
 
-                val ci = call.info
-                val session = CallSession(
-                    callId = prm.callId,
-                    accountId = accountId,
-                    remoteUri = ci.remoteUri ?: "",
-                    remoteDisplayName = ci.remoteContact ?: ci.remoteUri ?: "",
-                    direction = CallDirection.INCOMING,
-                    state = CallState.INCOMING
-                )
-                _callSession.value = session
-                onIncomingCall?.invoke(session)
-            } catch (e: Throwable) { }
+                try {
+                    val ci = call.info ?: run {
+                        log("Call info is null for incoming call $${prm.callId}", true)
+                        call.delete()
+                        callMap.remove(prm.callId)
+                        return
+                    }
+
+                    val session = CallSession(
+                        callId = prm.callId,
+                        accountId = accountId,
+                        remoteUri = ci.remoteUri ?: "",
+                        remoteDisplayName = ci.remoteContact ?: ci.remoteUri ?: "",
+                        direction = CallDirection.INCOMING,
+                        state = CallState.INCOMING
+                    )
+                    _callSession.value = session
+                    onIncomingCall?.invoke(session)
+                } catch (e: Throwable) {
+                    log("Failed to process incoming call info: ${e.message}", true)
+                    call.delete()
+                    callMap.remove(prm.callId)
+                }
+            } catch (e: Throwable) {
+                log("onIncomingCall failed: ${e.message}", true)
+            }
         }
     }
 
     class PjCall(acct: Account, callId: Int = -1) : Call(acct, callId) {
         override fun onCallState(prm: OnCallStateParam) {
             try {
-                val currentCallId = getId()
-                val ci = info
+                val currentCallId = try { getId() } catch (e: Throwable) {
+                    log("Failed to get call ID in onCallState: ${e.message}", true)
+                    return
+                }
+
+                val ci = try { info } catch (e: Throwable) {
+                    log("Failed to get call info for call $currentCallId: ${e.message}", true)
+                    return
+                }
+
+                if (ci == null) {
+                    log("Call info is null for call $currentCallId", true)
+                    return
+                }
+
                 log("Call $currentCallId state changed to ${ci.stateText} (code=${ci.lastStatusCode}, reason=${ci.lastReason})")
                 val newState = when (ci.state) {
                     pjsip_inv_state.PJSIP_INV_STATE_CALLING -> CallState.CALLING
@@ -561,9 +601,13 @@ object SipEngine {
                     } catch (e: Throwable) {}
                     
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
-                        conn.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REMOTE))
-                        conn.destroy()
-                        SipConnectionService.removeConnection(currentCallId)
+                        try {
+                            conn.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REMOTE))
+                            conn.destroy()
+                            SipConnectionService.removeConnection(currentCallId)
+                        } catch (e: Throwable) {
+                            log("Failed to disconnect telecom connection: ${e.message}", true)
+                        }
                     }
                     
                     val callToDelete = this
@@ -578,13 +622,17 @@ object SipEngine {
                     _callSession.value = _callSession.value?.copy(state = newState, callId = currentCallId)
                     
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
-                        when (newState) {
-                            CallState.CONFIRMED -> conn.setActive()
-                            CallState.EARLY -> if (_callSession.value?.direction == CallDirection.OUTGOING) {
-                                conn.setRinging()
+                        try {
+                            when (newState) {
+                                CallState.CONFIRMED -> conn.setActive()
+                                CallState.EARLY -> if (_callSession.value?.direction == CallDirection.OUTGOING) {
+                                    conn.setRinging()
+                                }
+                                CallState.CONNECTING -> conn.setDialing()
+                                else -> {}
                             }
-                            CallState.CONNECTING -> conn.setDialing()
-                            else -> {}
+                        } catch (e: Throwable) {
+                            log("Failed to update telecom connection state: ${e.message}", true)
                         }
                     }
                 }
@@ -593,22 +641,37 @@ object SipEngine {
 
         override fun onCallMediaState(prm: OnCallMediaStateParam) {
             try {
-                val ci = info
+                val ci = try { info } catch (e: Throwable) {
+                    log("Failed to get call info in onCallMediaState: ${e.message}", true)
+                    return
+                }
+
+                if (ci == null) {
+                    log("Call info is null in onCallMediaState", true)
+                    return
+                }
+
                 for (i in 0 until ci.media.size) {
-                    val mi = ci.media.get(i)
-                    if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
-                        mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
-                        val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
-                        aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
-                        endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
-                        
-                        recorder?.let { 
-                            aud.startTransmit(it)
-                            endpoint?.audDevManager()?.captureDevMedia?.startTransmit(it)
+                    try {
+                        val mi = ci.media.get(i)
+                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
+                            mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
+                            val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
+                            aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
+                            endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
+
+                            recorder?.let {
+                                aud.startTransmit(it)
+                                endpoint?.audDevManager()?.captureDevMedia?.startTransmit(it)
+                            }
                         }
+                    } catch (e: Throwable) {
+                        log("Failed to process media state for stream $i: ${e.message}", true)
                     }
                 }
-            } catch (e: Throwable) { }
+            } catch (e: Throwable) {
+                log("onCallMediaState failed: ${e.message}", true)
+            }
         }
     }
 }

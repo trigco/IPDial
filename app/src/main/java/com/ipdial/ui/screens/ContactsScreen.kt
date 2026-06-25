@@ -19,6 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.unit.IntSize
 import com.ipdial.data.model.Contact
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
@@ -41,10 +43,19 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val sortedContacts = remember(contacts) {
         contacts.sortedBy { it.name.trim().lowercase() }
     }
+    
+    val filteredContacts = remember(sortedContacts, searchQuery) {
+        if (searchQuery.isBlank()) sortedContacts
+        else sortedContacts.filter { 
+            it.name.contains(searchQuery, ignoreCase = true) || 
+            it.numbers.any { num -> num.contains(searchQuery) }
+        }
+    }
+
     val alphabet = remember { ('A'..'Z').toList() }
-    val letterToFirstIndex = remember(sortedContacts) {
+    val letterToFirstIndex = remember(filteredContacts) {
         val map = mutableMapOf<Char, Int>()
-        sortedContacts.forEachIndexed { index, contact ->
+        filteredContacts.forEachIndexed { index, contact ->
             val firstChar = contact.name.trim().firstOrNull()?.uppercaseChar() ?: '#'
             val targetChar = if (firstChar in 'A'..'Z') firstChar else '#'
             if (!map.containsKey(targetChar)) {
@@ -77,19 +88,11 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     state = listState,
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(sortedContacts, key = { it.id }) { contact ->
+                    items(filteredContacts, key = { it.id }) { contact ->
                         ContactItem(
                             contact = contact,
-                            onCall = {
-                                if (contact.numbers.size > 1) {
-                                    activeContactForNumberPicker = contact
-                                } else {
-                                    contact.numbers.firstOrNull()?.let { num ->
-                                        vm.makeCall(num)
-                                    }
-                                }
-                            },
-                            onDetails = {
+                            onNumberClick = { num -> vm.makeCall(num) },
+                            onContactClick = {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contact.id)
                                 }
@@ -119,27 +122,86 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             onDismiss = { activeContactForNumberPicker = null }
         )
     }
+
+    val showAccountSelection by vm.showAccountSelectionDialog.collectAsState()
+    val enabledAccounts = remember(accounts) {
+        accounts.filter { it.isEnabled }
+    }
+
+    if (showAccountSelection && enabledAccounts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissAccountSelection() },
+            title = { Text("Select Account") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    enabledAccounts.forEach { account ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickableWithRipple {
+                                    vm.proceedWithCallAfterAccountSelection(account.id)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = account.label.ifBlank { account.domain },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (account.username.isNotBlank()) {
+                                    Text(
+                                        text = account.username,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissAccountSelection() }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
-fun ContactItem(contact: Contact, onCall: () -> Unit, onDetails: () -> Unit) {
+fun ContactItem(contact: Contact, onNumberClick: (String) -> Unit, onContactClick: () -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickableWithRipple { onDetails() }
             .padding(vertical = 8.dp, horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Box(
             modifier = Modifier
+                .padding(top = 4.dp)
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .clickableWithRipple { onContactClick() },
             contentAlignment = Alignment.Center
         ) {
             if (contact.photoUri != null) {
+                val request = remember(contact.photoUri) {
+                    ImageRequest.Builder(context)
+                        .data(contact.photoUri)
+                        .size(96, 96) // Precise downsampling for ~44dp
+                        .crossfade(true)
+                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .build()
+                }
                 AsyncImage(
-                    model = contact.photoUri,
+                    model = request,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop
@@ -154,18 +216,23 @@ fun ContactItem(contact: Contact, onCall: () -> Unit, onDetails: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.clickableWithRipple { onContactClick() }
             )
-            val numberText = remember(contact.numbers) { contact.numbers.joinToString(", ") }
-            Text(
-                text = numberText,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
-        }
-        IconButton(onClick = onCall) {
-            Icon(Icons.Default.Call, "Call", tint = MaterialTheme.colorScheme.primary)
+            contact.numbers.forEach { number ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickableWithRipple { onNumberClick(number) }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Text(
+                        text = number,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

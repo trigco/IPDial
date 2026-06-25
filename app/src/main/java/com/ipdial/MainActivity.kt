@@ -1,5 +1,6 @@
 package com.ipdial
 
+import android.app.KeyguardManager
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -48,8 +50,6 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 object AppState {
     var isForeground = false
@@ -87,17 +87,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
-        }
+        applyLockScreenFlags()
         
         requestRequiredPermissions()
         com.ipdial.service.SipService.start(this)
@@ -109,6 +99,25 @@ class MainActivity : ComponentActivity() {
             val darkMode by vm.darkModeEnabled.collectAsState()
             val fontMultiplier by vm.fontSizeMultiplier.collectAsState()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+            // Keep screen on when there's an active call
+            val callSession by vm.callSession.collectAsState()
+            val localView = LocalView.current
+            LaunchedEffect(callSession) {
+                val window = (localView.context as? android.app.Activity)?.window
+                if (callSession != null) {
+                    // Screen on during active or incoming call
+                    window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        (localView.context as? android.app.Activity)?.setTurnScreenOn(true)
+                        (localView.context as? android.app.Activity)?.setShowWhenLocked(true)
+                    }
+                } else {
+                    // Allow screen to turn off after call ends
+                    window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
             IPDialTheme(
                 darkTheme = darkMode || systemDark,
                 fontMultiplier = fontMultiplier
@@ -120,17 +129,35 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        applyLockScreenFlags()
         handleIntent(intent)
     }
 
+    private fun applyLockScreenFlags() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+            km.requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+        }
+    }
+
     private fun handleIntent(intent: Intent?) {
-        if (intent != null) {
-            if (intent.action == "com.ipdial.TEST_CALL") {
-                val num = intent.getStringExtra("number")
+        intent?.let { i ->
+            if (i.action == "com.ipdial.TEST_CALL") {
+                val num = i.getStringExtra("number")
                 if (!num.isNullOrBlank()) {
                     testCallNumber.value = num
                 }
-            } else if (intent.action == "com.ipdial.TEST_HANGUP") {
+            } else if (i.action == "com.ipdial.TEST_HANGUP") {
                 triggerHangup.value = true
             }
         }
@@ -166,7 +193,7 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
     object Accounts: NavDest("accounts","Accounts", Icons.Default.AccountBalance)
     object About   : NavDest("about",   "About",    Icons.Default.Info)
     object Recordings: NavDest("recordings", "Recordings", Icons.Default.Mic)
-    object Logs    : NavDest("logs",    "Activity Log", Icons.Default.List)
+    object Logs    : NavDest("logs",    "Activity Log", Icons.AutoMirrored.Filled.List)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,13 +213,8 @@ fun IPDialApp(
             showFullIncomingScreen = false
         } else if (session.direction == CallDirection.INCOMING && 
                    (session.state == CallState.INCOMING || session.state == CallState.EARLY)) {
-            if (callingCardsEnabled) {
-                showFullIncomingScreen = true
-            } else {
-                showFullIncomingScreen = false
-                kotlinx.coroutines.delay(5000)
-                showFullIncomingScreen = true
-            }
+            // Always show full screen immediately for incoming calls to ensure screen wakes up
+            showFullIncomingScreen = true
         } else {
             showFullIncomingScreen = true
         }
@@ -467,7 +489,6 @@ fun IPDialApp(
                                 val displayName = contact?.name ?: activeCallSession.remoteDisplayName.ifBlank { vm.cleanUri(activeCallSession.remoteUri) }
 
                                 IncomingCallBanner(
-                                    session = activeCallSession,
                                     displayName = displayName,
                                     onAnswer = { vm.answerCall() },
                                     onDecline = { vm.hangup() },
@@ -568,7 +589,6 @@ fun AdDialog(onDismiss: () -> Unit) {
 
 @Composable
 fun IncomingCallBanner(
-    session: CallSession,
     displayName: String,
     onAnswer: () -> Unit,
     onDecline: () -> Unit,

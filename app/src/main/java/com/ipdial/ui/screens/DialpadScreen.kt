@@ -4,7 +4,6 @@ package com.ipdial.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,9 +12,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -34,47 +35,34 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.ipdial.data.model.SipAccount
 import com.ipdial.data.model.Contact
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.theme.ForestGreen
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val dialTextFieldValue by vm.dialString.collectAsState()
     val dialString = dialTextFieldValue.text
     val accounts by vm.accounts.collectAsState()
-    val selectedId by vm.selectedAccountId.collectAsState()
     val contacts by vm.contacts.collectAsState()
     val mostCalled by vm.mostCalledContacts.collectAsState()
     val keypadDesign by vm.keypadDesign.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
-    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-    var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
+    @Suppress("DEPRECATION")
+    val clipboardManager = LocalClipboardManager.current
 
     val suggestedContacts = remember(dialString, contacts) {
         if (dialString.isBlank()) emptyList()
         else {
-            val t9Map = mapOf(
-                'a' to '2', 'b' to '2', 'c' to '2',
-                'd' to '3', 'e' to '3', 'f' to '3',
-                'g' to '4', 'h' to '4', 'i' to '4',
-                'j' to '5', 'k' to '5', 'l' to '5',
-                'm' to '6', 'n' to '6', 'o' to '6',
-                'p' to '7', 'q' to '7', 'r' to '7', 's' to '7',
-                't' to '8', 'u' to '8', 'v' to '8',
-                'w' to '9', 'x' to '9', 'y' to '9', 'z' to '9'
-            )
-            contacts.filter { contact ->
-                val nameT9 = contact.name.lowercase().mapNotNull { t9Map[it] }.joinToString("")
-                contact.numbers.any { it.filter { it.isDigit() }.contains(dialString) } ||
+            contacts.asSequence().filter { contact ->
                 contact.name.contains(dialString, ignoreCase = true) ||
-                nameT9.contains(dialString)
-            }.take(5)
+                contact.numbers.any { it.filter { it.isDigit() }.contains(dialString) } ||
+                contact.name.lowercase().mapNotNull { T9_MAP[it] }.joinToString("").contains(dialString)
+            }.take(5).toList()
         }
     }
 
@@ -98,33 +86,21 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
                         )
                     }
-                    items(mostCalled) { contact ->
-                        SuggestedContactRow(contact) {
-                            if (contact.numbers.size > 1) {
-                                activeContactForNumberPicker = contact
-                            } else {
-                                vm.clearDial()
-                                contact.numbers.firstOrNull()?.let { num ->
-                                    num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                                    vm.makeCall()
-                                }
-                            }
+                    items(mostCalled, key = { it.id }) { contact ->
+                        SuggestedContactRow(contact) { num ->
+                            vm.clearDial()
+                            num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                            vm.makeCall()
                         }
                     }
                 }
             } else if (suggestedContacts.isNotEmpty()) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(suggestedContacts) { contact ->
-                        SuggestedContactRow(contact) {
-                            if (contact.numbers.size > 1) {
-                                activeContactForNumberPicker = contact
-                            } else {
-                                vm.clearDial()
-                                contact.numbers.firstOrNull()?.let { num ->
-                                    num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                                    vm.makeCall()
-                                }
-                            }
+                    items(suggestedContacts, key = { it.id }) { contact ->
+                        SuggestedContactRow(contact) { num ->
+                            vm.clearDial()
+                            num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                            vm.makeCall()
                         }
                     }
                 }
@@ -137,12 +113,6 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     )
                 }
             }
-        }
-
-        // Account selector (if multiple)
-        if (accounts.size > 1) {
-            AccountChipRow(accounts, selectedId) { vm.selectAccount(it) }
-            Spacer(Modifier.height(4.dp))
         }
 
         // Dial display row
@@ -194,8 +164,8 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     value = dialTextFieldValue,
                     onValueChange = { vm.setDialString(it) },
                     textStyle = MaterialTheme.typography.displayMedium.copy(
-                        fontSize = if (dialString.length > 10) 32.sp else 48.sp, // Increased from 28/40
-                        fontWeight = FontWeight.Normal, // Increased from Light
+                        fontSize = if (dialString.length > 10) 32.sp else 48.sp,
+                        fontWeight = FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     ),
@@ -221,7 +191,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Backspace,
+                        imageVector = Icons.AutoMirrored.Filled.Backspace,
                         contentDescription = "Backspace",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -261,7 +231,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             .height(80.dp), // Fixed height regardless of font size
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        row.forEach { (digit, sub, _) ->
+                        row.forEachIndexed { colIndex, (digit, sub, _) ->
                             DialKeyRounded(
                                 digit = digit,
                                 subLabel = sub,
@@ -277,6 +247,12 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 } else null,
                                 modifier = Modifier.weight(1f)
                             )
+                            if (colIndex < 2) {
+                                VerticalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -288,7 +264,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     .padding(horizontal = 0.dp)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 keys.chunked(3).forEach { row ->
                     Row(
                         modifier = Modifier
@@ -312,14 +288,14 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 modifier = Modifier.weight(1f)
                             )
                             if (colIndex < 2) {
-                                Divider(
+                                VerticalDivider(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                     modifier = Modifier.fillMaxHeight().width(1.dp)
                                 )
                             }
                         }
                     }
-                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
             }
         }
@@ -329,7 +305,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .width(180.dp)
+                .width(160.dp)
                 .height(56.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(ForestGreen)
@@ -348,38 +324,95 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         Spacer(Modifier.height(12.dp))
     }
 
-    activeContactForNumberPicker?.let { contact ->
-        com.ipdial.ui.NumberPickerDialog(
-            numbers = contact.numbers,
-            onPick = { number ->
-                vm.clearDial()
-                number.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                vm.makeCall()
+    val showAccountSelection by vm.showAccountSelectionDialog.collectAsState()
+    val enabledAccounts = remember(accounts) {
+        accounts.filter { it.isEnabled }
+    }
+
+    if (showAccountSelection && enabledAccounts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissAccountSelection() },
+            title = { Text("Select Account") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    enabledAccounts.forEach { account ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickableWithRipple {
+                                    vm.proceedWithCallAfterAccountSelection(account.id)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = account.label.ifBlank { account.domain },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (account.username.isNotBlank()) {
+                                    Text(
+                                        text = account.username,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             },
-            onDismiss = { activeContactForNumberPicker = null }
+            confirmButton = {
+                TextButton(onClick = { vm.dismissAccountSelection() }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
 
+private val T9_MAP = mapOf(
+    'a' to '2', 'b' to '2', 'c' to '2',
+    'd' to '3', 'e' to '3', 'f' to '3',
+    'g' to '4', 'h' to '4', 'i' to '4',
+    'j' to '5', 'k' to '5', 'l' to '5',
+    'm' to '6', 'n' to '6', 'o' to '6',
+    'p' to '7', 'q' to '7', 'r' to '7', 's' to '7',
+    't' to '8', 'u' to '8', 'v' to '8',
+    'w' to '9', 'x' to '9', 'y' to '9', 'z' to '9'
+)
+
 @Composable
-fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
+fun SuggestedContactRow(contact: Contact, onNumberClick: (String) -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickableWithRipple { onClick() }
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Box(
             modifier = Modifier
+                .padding(top = 4.dp)
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
             if (contact.photoUri != null) {
+                val request = remember(contact.photoUri) {
+                    coil.request.ImageRequest.Builder(context)
+                        .data(contact.photoUri)
+                        .size(80, 80)
+                        .crossfade(true)
+                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .build()
+                }
                 AsyncImage(
-                    model = contact.photoUri,
+                    model = request,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -393,19 +426,27 @@ fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = contact.name,
                 style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             contact.numbers.forEach { number ->
-                Text(
-                    text = number,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickableWithRipple { onNumberClick(number) }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Text(
+                        text = number,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
@@ -427,8 +468,8 @@ fun DialKeyRounded(
         else 
             Color.Black.copy(alpha = 0.08f),
         modifier = modifier
-            .aspectRatio(1f) // iOS keys are perfectly circular
-            .padding(4.dp) // Add space between keys for iOS look
+            .aspectRatio(1f)
+            .padding(4.dp)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -441,7 +482,7 @@ fun DialKeyRounded(
             ) {
                 Text(
                     text = digit,
-                    style = MaterialTheme.typography.displaySmall.copy( // Larger for iOS look
+                    style = MaterialTheme.typography.displaySmall.copy(
                         fontWeight = FontWeight.Normal,
                         fontSize = 32.sp
                     ),
@@ -495,32 +536,6 @@ fun DialKey(
                     fontSize = 10.sp
                 )
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AccountChipRow(
-    accounts: List<SipAccount>,
-    selectedId: String?,
-    onSelect: (String) -> Unit
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
-        accounts.take(3).forEach { acc ->
-            FilterChip(
-                selected = acc.id == selectedId,
-                onClick = { onSelect(acc.id) },
-                label = { Text(acc.label.ifBlank { acc.domain }, fontSize = 10.sp) },
-                leadingIcon = if (acc.id == selectedId) {
-                    { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) }
-                } else null
-            )
         }
     }
 }

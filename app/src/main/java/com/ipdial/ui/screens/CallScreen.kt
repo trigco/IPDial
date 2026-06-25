@@ -3,12 +3,12 @@ package com.ipdial.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.blur
 import coil.compose.AsyncImage
-import com.ipdial.data.model.CallDirection
 import com.ipdial.data.model.CallSession
 import com.ipdial.data.model.CallState
 import com.ipdial.ui.SipViewModel
@@ -37,7 +36,8 @@ import kotlinx.coroutines.delay
 fun CallScreen(vm: SipViewModel, session: CallSession) {
     val accounts by vm.accounts.collectAsState()
     val contacts by vm.contacts.collectAsState()
-    
+    val audioDeviceMode by vm.audioDeviceMode.collectAsState()
+
     val account = accounts.firstOrNull { it.id == session.accountId }
     val simLabel = account?.displayName ?: ""
 
@@ -56,11 +56,18 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             }
         }
     }
-    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { vm.cleanUri(session.remoteUri) }
+    val displayName = contact?.name ?: vm.cleanDisplayName(session.remoteDisplayName, session.remoteUri)
 
     var showDialpad by remember { mutableStateOf(false) }
-    var elapsedSeconds by remember { mutableStateOf(0L) }
+    var elapsedSeconds by remember { mutableLongStateOf(0L) }
     
+    // Check for Bluetooth devices when call is active
+    LaunchedEffect(session.state) {
+        if (session.state == CallState.CONFIRMED) {
+            vm.updateBluetoothAvailability()
+        }
+    }
+
     val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
     val isFullScreenPhoto = callsCardsEnabled && contact?.photoUri != null
     val textColor = if (isFullScreenPhoto) Color.White else MaterialTheme.colorScheme.onBackground
@@ -83,7 +90,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
     ) {
         if (isFullScreenPhoto) {
             AsyncImage(
-                model = contact!!.photoUri,
+                model = contact.photoUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(12.dp)
@@ -181,19 +188,18 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             // ── Call controls ─────────────────────────────────────────────
             AnimatedContent(targetState = showDialpad, label = "dialpad_toggle") { showDp ->
                 if (showDp) {
-                    InCallDialpad(
-                        vm = vm,
-                        onHide = { showDialpad = false }
-                    )
+                    InCallDialpad(vm = vm) {
+                        showDialpad = false
+                    }
                 } else {
                     CallControls(
                         session = session,
                         isActive = session.state == CallState.CONFIRMED,
                         onKeypad = { showDialpad = true },
                         onMute = { vm.toggleMute() },
-                        onSpeaker = { vm.toggleSpeaker() },
-                        onHold = { vm.toggleHold() },
-                        onRecord = { vm.toggleRecording() }
+                        onSpeaker = { vm.cycleAudioDevice() },
+                        onRecord = { vm.toggleRecording() },
+                        audioDeviceMode = audioDeviceMode
                     )
                 }
             }
@@ -241,8 +247,8 @@ fun CallControls(
     onKeypad: () -> Unit,
     onMute: () -> Unit,
     onSpeaker: () -> Unit,
-    onHold: () -> Unit,
     onRecord: () -> Unit,
+    audioDeviceMode: String = "EARPIECE",
 ) {
     Row(
         modifier = Modifier
@@ -262,13 +268,27 @@ fun CallControls(
             enabled = isActive,
             onClick = onMute
         )
+
+        // Audio Device Button
+        val audioIcon = when (audioDeviceMode) {
+            "SPEAKER" -> Icons.AutoMirrored.Filled.VolumeUp
+            "BLUETOOTH" -> Icons.Default.Bluetooth
+            else -> Icons.Default.PhoneInTalk
+        }
+        val audioLabel = when (audioDeviceMode) {
+            "SPEAKER" -> "Speaker"
+            "BLUETOOTH" -> "Bluetooth"
+            else -> "Earpiece"
+        }
+
         CallControlButton(
-            icon = if (session.isSpeaker) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-            label = "Speaker",
-            active = session.isSpeaker,
+            icon = audioIcon,
+            label = audioLabel,
+            active = audioDeviceMode != "EARPIECE",
             enabled = true,
             onClick = onSpeaker
         )
+
         CallControlButton(
             icon = Icons.Default.RadioButtonChecked,
             label = if (session.isRecording) "Recording" else "Record",

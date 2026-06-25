@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +43,6 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
     
     val account = accounts.firstOrNull { it.id == session.accountId }
     val viaLine  = account?.label?.ifBlank { account.domain } ?: "SIP"
-    val callVia  = account?.let { it.label.ifBlank { it.username } } ?: ""
     
     val contact = remember(session.remoteUri, contacts) {
         val cleanedSessionUriDigits = vm.cleanUri(session.remoteUri).filter { it.isDigit() }
@@ -60,7 +58,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             }
         }
     }
-    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { vm.cleanUri(session.remoteUri) }
+    val displayName = contact?.name ?: vm.cleanDisplayName(session.remoteDisplayName, session.remoteUri)
 
     val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
     val isFullScreenPhoto = callsCardsEnabled && contact?.photoUri != null
@@ -158,7 +156,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
         Spacer(Modifier.weight(1f))
 
         // Swipe to Answer/Decline Slider
-        var offsetX by remember { mutableStateOf(0f) }
+        var offsetX by remember { mutableFloatStateOf(0f) }
         val density = LocalDensity.current
         val dragRange = with(density) { 110.dp.toPx() }
         val swipeThreshold = dragRange * 0.7f

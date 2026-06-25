@@ -22,7 +22,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 fun cleanUri(uri: String): String =
-    uri.removePrefix("sip:").substringBefore("@").substringBefore(";")
+    uri.replace("<", "").replace(">", "").removePrefix("sip:")
+        .substringBefore("@")
+        .substringBefore(";")
+
+fun cleanDisplayName(name: String, uri: String): String {
+    val cleanedName = name.replace("\"", "").trim()
+    if (cleanedName.isEmpty() || cleanedName.startsWith("sip:") || cleanedName.startsWith("<sip:")) {
+        return cleanUri(uri)
+    }
+    // If it's "Name" <sip:123@domain>, extract Name
+    if (cleanedName.contains("<sip:")) {
+        return cleanedName.substringBefore("<").trim()
+    }
+    return cleanedName
+}
 
 fun Modifier.clickableWithRipple(
     enabled: Boolean = true,

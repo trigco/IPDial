@@ -162,6 +162,6 @@ fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: 
                 Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
             }
         }
-        Divider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }

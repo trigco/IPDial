@@ -11,7 +11,8 @@ class BootReceiver : BroadcastReceiver() {
                 "android.intent.action.QUICKBOOT_POWERON"
             )
         ) {
-            SipService.start(context)
+            // Pass delayStartForeground=true because FGS with phoneCall type is not allowed from BOOT_COMPLETED on Android 12+
+            SipService.start(context, delayStartForeground = true)
         }
     }
 }

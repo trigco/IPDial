@@ -12,9 +12,7 @@ import android.util.Log
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -43,12 +41,19 @@ class SipService : Service() {
         const val ACTION_START = "com.ipdial.START"
         const val ACTION_STOP = "com.ipdial.STOP"
         const val ACTION_TEST_CALL = "com.ipdial.TEST_CALL"
+        const val ACTION_SET_AUDIO_DEVICE = "com.ipdial.SET_AUDIO_DEVICE"
 
-        fun start(context: Context) {
-            val intent = Intent(context, SipService::class.java).apply { action = ACTION_START }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        fun start(context: Context, delayStartForeground: Boolean = false) {
+            val intent = Intent(context, SipService::class.java).apply {
+                action = ACTION_START
+                if (delayStartForeground) {
+                    putExtra("delayStartForeground", true)
+                }
+            }
+            try {
                 context.startForegroundService(intent)
-            } else {
+            } catch (e: Exception) {
+                Log.e("SipService", "startForegroundService failed, trying regular startService", e)
                 context.startService(intent)
             }
         }
@@ -100,7 +105,7 @@ class SipService : Service() {
                 .setOngoing(true)
                 .build()
 
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            val nm = context.getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(NOTIF_ID_INCOMING, notif)
         }
     }
@@ -119,7 +124,7 @@ class SipService : Service() {
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         
         vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
             vibratorManager.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
@@ -143,7 +148,7 @@ class SipService : Service() {
                         SipEngine.hangupCall(session.callId)
                     } else {
                         // Resolve contact name or clean number
-                        var displayName = session.remoteDisplayName
+                        val displayName = session.remoteDisplayName
                         val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
                         
                         val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
@@ -160,7 +165,7 @@ class SipService : Service() {
                             }
                         }
                         
-                        val finalDisplayName = matchedContact?.name ?: if (cleanNum.isNotBlank()) cleanNum else displayName
+                        val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
                         
                         TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
                         showIncomingCallNotification(finalDisplayName, session.callId)
@@ -247,6 +252,25 @@ class SipService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val delayStartForeground = intent?.getBooleanExtra("delayStartForeground", false) ?: false
+
+        if (delayStartForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Delay foreground service promotion to allow system to stabilize after boot
+            try {
+                // First, try to start as regular background service
+                Log.d("SipService", "Starting in background mode with delayed foreground promotion")
+                // This ensures we can start without FGS restrictions
+                Handler(Looper.getMainLooper()).postDelayed({
+                    startServiceForeground()
+                }, 2000) // 2 second delay
+            } catch (e: Exception) {
+                Log.e("SipService", "Failed to schedule delayed foreground promotion", e)
+                startServiceForeground()
+            }
+        } else {
+            startServiceForeground()
+        }
+
         when (intent?.action) {
             ACTION_ANSWER -> {
                 val callId = intent.getIntExtra("callId", -1)
@@ -257,12 +281,25 @@ class SipService : Service() {
                 val fullIntent = Intent(this, MainActivity::class.java).apply {
                     this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
-                startActivity(fullIntent)
+                try {
+                    startActivity(fullIntent)
+                } catch (e: Exception) {
+                    Log.e("SipService", "Failed to start MainActivity on answer", e)
+                }
             }
             ACTION_DECLINE -> {
                 val callId = intent.getIntExtra("callId", -1)
                 SipEngine.hangupCall(callId)
                 cancelIncomingNotification()
+            }
+            ACTION_SET_AUDIO_DEVICE -> {
+                val mode = intent.getStringExtra("mode") ?: "EARPIECE"
+                Log.d("SipService", "ACTION_SET_AUDIO_DEVICE: $mode")
+                when (mode) {
+                    "EARPIECE" -> routeAudioToEarpiece()
+                    "SPEAKER" -> routeAudioToSpeaker(true)
+                    "BLUETOOTH" -> routeAudioToBluetooth()
+                }
             }
             ACTION_HANGUP -> SipEngine.hangupCall()
             ACTION_STOP -> stopSelf()
@@ -382,7 +419,7 @@ class SipService : Service() {
                 repo.globalRingtone.first()
             }
             
-            if (ringtoneUriStr == "android.resource://${packageName}/raw/ipdial_ringtone") {
+            if (ringtoneUriStr == "android.resource://$packageName/raw/ipdial_ringtone") {
                 mediaPlayer = android.media.MediaPlayer.create(applicationContext, R.raw.ipdial_ringtone)
                 mediaPlayer?.isLooping = true
                 mediaPlayer?.start()
@@ -400,12 +437,7 @@ class SipService : Service() {
             // Vibrate if setting is enabled
             kotlinx.coroutines.runBlocking {
                 if (repo.globalVibrate.first()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        vibrator?.vibrate(longArrayOf(0, 1000, 1000), 0)
-                    }
+                    vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
                 }
             }
         } catch (e: Exception) {
@@ -422,6 +454,30 @@ class SipService : Service() {
             mediaPlayer = null
             vibrator?.cancel()
         } catch (e: Exception) {}
+    }
+
+    private fun isBluetoothConnected(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            return devices.any {
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            return audioManager.isBluetoothScoAvailableOffCall || audioManager.isBluetoothA2dpOn
+        }
+    }
+
+    private fun routeAudioToDefault() {
+        val session = SipEngine.callSession.value ?: return
+        if (session.isSpeaker) {
+            routeAudioToSpeaker(true)
+        } else if (isBluetoothConnected()) {
+            routeAudioToBluetooth()
+        } else {
+            routeAudioToEarpiece()
+        }
     }
 
     private fun observeCallState() {
@@ -458,19 +514,20 @@ class SipService : Service() {
                     when (session.state) {
                         CallState.INCOMING -> {
                             playRingtone()
+                            acquireWakeLockForIncoming()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         CallState.CONFIRMED -> {
                             stopRingtone()
                             cancelIncomingNotification()
-                            routeAudioToSpeaker(session.isSpeaker)
+                            routeAudioToDefault()
                             acquireWakeLock()
                             lastWasConfirmed = true
                             if (callStartTime == 0L) callStartTime = System.currentTimeMillis()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         CallState.CALLING, CallState.EARLY, CallState.CONNECTING -> {
-                            routeAudioToSpeaker(session.isSpeaker)
+                            routeAudioToDefault()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         else -> {}
@@ -546,6 +603,7 @@ class SipService : Service() {
         val session = SipEngine.callSession.value
         if (session != null && session.callId >= 0) {
             val connection = SipConnectionService.getConnection(session.callId)
+            @Suppress("DEPRECATION")
             connection?.setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE)
         }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
@@ -562,6 +620,7 @@ class SipService : Service() {
             val connection = SipConnectionService.getConnection(session.callId)
             if (connection != null) {
                 val route = if (on) android.telecom.CallAudioState.ROUTE_SPEAKER else android.telecom.CallAudioState.ROUTE_EARPIECE
+                @Suppress("DEPRECATION")
                 connection.setAudioRoute(route)
                 Log.d("SipService", "Routed audio via Telecom Connection to speaker=$on")
             }
@@ -587,10 +646,50 @@ class SipService : Service() {
         }
     }
 
+    private fun routeAudioToBluetooth() {
+        val session = SipEngine.callSession.value
+        if (session != null && session.callId >= 0) {
+            val connection = SipConnectionService.getConnection(session.callId)
+            @Suppress("DEPRECATION")
+            connection?.setAudioRoute(android.telecom.CallAudioState.ROUTE_BLUETOOTH)
+            Log.d("SipService", "Routed audio via Telecom Connection to Bluetooth")
+        }
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        @Suppress("DEPRECATION")
+        audioManager.isSpeakerphoneOn = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val devices = audioManager.availableCommunicationDevices
+            val btDevice = devices.find {
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+            }
+            if (btDevice != null) {
+                val res = audioManager.setCommunicationDevice(btDevice)
+                Log.d("SipService", "setCommunicationDevice Bluetooth: $res")
+            } else {
+                Log.e("SipService", "Bluetooth device not found in available devices")
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.startBluetoothSco()
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothScoOn = true
+        }
+    }
+
+
+
     private fun restoreAudio() {
         audioManager.mode = AudioManager.MODE_NORMAL
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
+        @Suppress("DEPRECATION")
+        if (audioManager.isBluetoothScoOn) {
+            @Suppress("DEPRECATION")
+            audioManager.stopBluetoothSco()
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothScoOn = false
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             audioManager.clearCommunicationDevice()
         }
@@ -605,30 +704,51 @@ class SipService : Service() {
         ).apply { acquire(60 * 60 * 1000L) }
     }
 
+    private fun acquireWakeLockForIncoming() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "IPDial:incoming_call_wake"
+            )
+            wl.acquire(10000L) // 10 seconds should be enough to show UI
+        } catch (e: Exception) {
+            Log.e("SipService", "Failed to acquire incoming wake lock", e)
+        }
+    }
+
     private fun releaseWakeLock() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
     }
 
     private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-            nm.createNotificationChannel(
-                NotificationChannel(NOTIF_CHANNEL_SIP, "SIP Service", NotificationManager.IMPORTANCE_MIN).apply {
-                    description = "Background SIP registration"
-                    setShowBadge(false)
-                }
-            )
+        nm.createNotificationChannel(
+            NotificationChannel(NOTIF_CHANNEL_SIP, "SIP Service", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Background SIP registration"
+                setShowBadge(false)
+            }
+        )
 
-            nm.createNotificationChannel(
-                NotificationChannel(NOTIF_CHANNEL_CALL, "Incoming Calls", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Incoming VoIP call alerts"
-                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                    setShowBadge(true)
-                }
-            )
-        }
+        nm.createNotificationChannel(
+            NotificationChannel(NOTIF_CHANNEL_CALL, "Incoming Calls", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Incoming VoIP call alerts"
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setShowBadge(true)
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 500)
+                setSound(
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE),
+                    android.media.AudioAttributes.Builder()
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .build()
+                )
+            }
+        )
     }
 
     private fun buildServiceNotification(): Notification {

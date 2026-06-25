@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,13 +42,14 @@ fun HomeScreen(
     onEditBeforeCall: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val accounts  by vm.accounts.collectAsState()
     val callLog   by vm.callLog.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val contactsState by vm.contacts.collectAsState()
     
-    var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Contacts
+    var filterIndex by remember { mutableIntStateOf(0) } // 0: History, 1: Contacts
     val filterLabels = remember { listOf("History", "Contacts") }
     var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
     var activeHistoryEntryForDetail by remember { mutableStateOf<CallLogEntry?>(null) }
@@ -149,14 +151,8 @@ fun HomeScreen(
                     items(sortedContacts, key = { it.id }) { contact ->
                         ContactItem(
                             contact = contact,
-                            onCall = {
-                                if (contact.numbers.size > 1) {
-                                    activeContactForNumberPicker = contact
-                                } else {
-                                    contact.numbers.firstOrNull()?.let { vm.makeCall(it) }
-                                }
-                            },
-                            onDetails = {
+                            onNumberClick = { num -> vm.makeCall(num) },
+                            onContactClick = {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                                     data = android.net.Uri.withAppendedPath(
                                         android.provider.ContactsContract.Contacts.CONTENT_URI, 
@@ -220,14 +216,8 @@ fun HomeScreen(
                         items(searchContacts, key = { "search_${it.id}" }) { contact ->
                             ContactItem(
                                 contact = contact,
-                                onCall = {
-                                    if (contact.numbers.size > 1) {
-                                        activeContactForNumberPicker = contact
-                                    } else {
-                                        contact.numbers.firstOrNull()?.let { vm.makeCall(it) }
-                                    }
-                                },
-                                onDetails = {
+                                onNumberClick = { num -> vm.makeCall(num) },
+                                onContactClick = {
                                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                                         data = android.net.Uri.withAppendedPath(
                                             android.provider.ContactsContract.Contacts.CONTENT_URI, 
@@ -285,6 +275,54 @@ fun HomeScreen(
             numbers = contact.numbers,
             onPick = { number -> vm.makeCall(number) },
             onDismiss = { activeContactForNumberPicker = null }
+        )
+    }
+
+    val showAccountSelection by vm.showAccountSelectionDialog.collectAsState()
+    val enabledAccounts = remember(accounts) {
+        accounts.filter { it.isEnabled }
+    }
+
+    if (showAccountSelection && enabledAccounts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissAccountSelection() },
+            title = { Text("Select Account") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    enabledAccounts.forEach { account ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickableWithRipple {
+                                    vm.proceedWithCallAfterAccountSelection(account.id)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = account.label.ifBlank { account.domain },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (account.username.isNotBlank()) {
+                                    Text(
+                                        text = account.username,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissAccountSelection() }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
@@ -410,7 +448,7 @@ fun CallLogRow(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val viaLabel  = account?.label?.ifBlank { account.domain } ?: "SIP"
-    val callerName = contact?.name ?: entry.remoteDisplayName.ifBlank { cleanUri(entry.remoteUri) }
+    val callerName = contact?.name ?: cleanDisplayName(entry.remoteDisplayName, entry.remoteUri)
     val timeStr   = formatTime(entry.timestampMs)
 
     Surface(
@@ -472,9 +510,9 @@ fun CallLogRow(
                 ) {
                     Icon(
                         imageVector = when {
-                            entry.missed                           -> Icons.Default.CallMissed
-                            entry.direction == CallDirection.INCOMING -> Icons.Default.CallReceived
-                            else                                   -> Icons.Default.CallMade
+                            entry.missed                           -> Icons.AutoMirrored.Filled.CallMissed
+                            entry.direction == CallDirection.INCOMING -> Icons.AutoMirrored.Filled.CallReceived
+                            else                                   -> Icons.AutoMirrored.Filled.CallMade
                         },
                         contentDescription = null,
                         tint = when {
@@ -562,7 +600,7 @@ private fun formatTime(ms: Long): String {
     val diffMin = (now - ms) / 60_000
     return when {
         diffMin < 1   -> "Just now"
-        diffMin < 60  -> "${diffMin} min ago"
+        diffMin < 60  -> "$diffMin min ago"
         else          -> SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(ms))
     }
 }
@@ -666,9 +704,9 @@ fun CallHistoryDetailDialog(
                             ) {
                                 Icon(
                                     imageVector = when {
-                                        entry.missed                           -> Icons.Default.CallMissed
-                                        entry.direction == CallDirection.INCOMING -> Icons.Default.CallReceived
-                                        else                                   -> Icons.Default.CallMade
+                                        entry.missed                           -> Icons.AutoMirrored.Filled.CallMissed
+                                        entry.direction == CallDirection.INCOMING -> Icons.AutoMirrored.Filled.CallReceived
+                                        else                                   -> Icons.AutoMirrored.Filled.CallMade
                                     },
                                     contentDescription = null,
                                     tint = when {

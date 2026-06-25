@@ -1,6 +1,5 @@
 package com.ipdial.ui.screens
 
-import android.app.Activity
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
@@ -70,8 +69,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     onEdit = { editingAccount = account; showEditSheet = true },
                     onDelete = { vm.deleteAccount(account.id) },
                     onSetDefault = { vm.setDefaultAccount(account.id) },
-                    onToggleEnabled = { vm.saveAccount(account.copy(isEnabled = !account.isEnabled)) },
-                    vm = vm
+                    onToggleEnabled = { vm.saveAccount(account.copy(isEnabled = !account.isEnabled)) }
                 )
             }
         }
@@ -92,11 +90,9 @@ fun AccountSettingsRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onSetDefault: () -> Unit,
-    onToggleEnabled: () -> Unit,
-    vm: SipViewModel
+    onToggleEnabled: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -162,7 +158,7 @@ fun AccountSettingsRow(
                 }
             }
         }
-        Divider(
+        HorizontalDivider(
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
             modifier = Modifier.padding(start = 40.dp)
         )
@@ -262,30 +258,6 @@ fun AccountEditSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
-
-            // Codec Selection with Ad-Gate
-            Text("Preferred Codec", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            var showCodecMenu by remember { mutableStateOf(false) }
-            Box(modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = { showCodecMenu = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(codec.name)
-                    Icon(Icons.Default.ArrowDropDown, null)
-                }
-                DropdownMenu(expanded = showCodecMenu, onDismissRequest = { showCodecMenu = false }) {
-                    PreferredCodec.values().forEach { c ->
-                        DropdownMenuItem(
-                            text = { Text(c.name) },
-                            onClick = {
-                                codec = c
-                                showCodecMenu = false
-                            }
-                        )
-                    }
-                }
-            }
 
             Spacer(Modifier.height(8.dp))
 

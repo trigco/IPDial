@@ -5,21 +5,31 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.ContactsContract
+import com.ipdial.data.local.AppDatabase
+import com.ipdial.data.local.ContactEntity
 import com.ipdial.data.model.Contact
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class ContactsRepository(private val context: Context) {
 
-    suspend fun getContacts(query: String? = null): List<Contact> = withContext(Dispatchers.IO) {
-        val contactsMap = mutableMapOf<String, Contact>()
+    private val contactDao = AppDatabase.getDatabase(context).contactDao()
+
+    val allContacts: Flow<List<Contact>> = contactDao.getAllContacts().map { entities ->
+        entities.map { it.toContact() }
+    }
+
+    suspend fun syncContacts() = withContext(Dispatchers.IO) {
         if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) 
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            return@withContext emptyList()
+            return@withContext
         }
+        
+        val contactsMap = mutableMapOf<String, Contact>()
         try {
             val contentResolver: ContentResolver = context.contentResolver
-
             val projection = arrayOf(
                 ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
                 ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -28,18 +38,11 @@ class ContactsRepository(private val context: Context) {
                 ContactsContract.CommonDataKinds.Phone.STARRED
             )
 
-            val selection = if (query.isNullOrBlank()) {
-                null
-            } else {
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-            }
-            val selectionArgs = if (query.isNullOrBlank()) null else arrayOf("%$query%")
-
             val cursor: Cursor? = contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 projection,
-                selection,
-                selectionArgs,
+                null,
+                null,
                 "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
             )
 
@@ -72,21 +75,38 @@ class ContactsRepository(private val context: Context) {
                     }
                 }
             }
+            
+            val entities = contactsMap.values.map { ContactEntity.fromContact(it) }
+            contactDao.refreshContacts(entities)
+            
         } catch (e: Exception) {
-            android.util.Log.e("ContactsRepo", "Failed to fetch contacts: ${e.message}")
+            android.util.Log.e("ContactsRepo", "Failed to sync contacts: ${e.message}")
         }
-        contactsMap.values.toList()
+    }
+
+    suspend fun getContacts(query: String? = null): List<Contact> = withContext(Dispatchers.IO) {
+        // This is now just a fallback or for immediate search if needed.
+        // Usually we observe allContacts flow.
+        syncContacts()
+        val contactsMap = mutableMapOf<String, Contact>()
+        // Return from DB
+        emptyList() // Flow is preferred
     }
 
     suspend fun toggleFavorite(contactId: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
-        val values = android.content.ContentValues().apply {
-            put(ContactsContract.Contacts.STARRED, if (isFavorite) 1 else 0)
+        try {
+            val values = android.content.ContentValues().apply {
+                put(ContactsContract.Contacts.STARRED, if (isFavorite) 1 else 0)
+            }
+            context.contentResolver.update(
+                ContactsContract.Contacts.CONTENT_URI,
+                values,
+                ContactsContract.Contacts._ID + " = ?",
+                arrayOf(contactId)
+            )
+            contactDao.updateFavorite(contactId, isFavorite)
+        } catch (e: Exception) {
+            android.util.Log.e("ContactsRepo", "Failed to toggle favorite: ${e.message}")
         }
-        context.contentResolver.update(
-            ContactsContract.Contacts.CONTENT_URI,
-            values,
-            ContactsContract.Contacts._ID + " = ?",
-            arrayOf(contactId)
-        )
     }
 }
