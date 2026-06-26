@@ -65,6 +65,7 @@ import com.ipdial.ui.SipViewModel
 @Composable
 fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val accounts by vm.accounts.collectAsState()
+    val isPro by vm.isPro.collectAsState()
     val defaultDomain by vm.defaultDomain.collectAsState()
     var editingAccount by remember { mutableStateOf<SipAccount?>(null) }
     var showEditSheet by remember { mutableStateOf(false) }
@@ -75,8 +76,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
         },
         bottomBar = {
-            val showAd by vm.showAd.collectAsState()
-            if (showAd) {
+            if (!isPro) {
                 com.ipdial.ui.StartIoBanner(
                     vm = vm,
                     modifier = Modifier.fillMaxWidth().padding(8.dp)
@@ -117,7 +117,13 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             AccountEditSheet(
                 existing = editingAccount,
                 defaultDomain = defaultDomain,
-                onSave = { vm.saveAccount(it); showEditSheet = false },
+                onSave = { 
+                    if (!isPro && editingAccount == null && accounts.isNotEmpty()) {
+                        vm.triggerAd(context)
+                    }
+                    vm.saveAccount(it)
+                    showEditSheet = false 
+                },
                 onDismiss = { showEditSheet = false }
             )
         }

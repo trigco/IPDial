@@ -98,28 +98,121 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val adsEnabled: StateFlow<Boolean> = repo.adsEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { 
+    val proPoints: StateFlow<Int> = repo.proPoints
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+        
+    val proExpiration: StateFlow<Long> = repo.proExpiration
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
+        
+    val isPro: StateFlow<Boolean> = proExpiration.map { it > System.currentTimeMillis() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        
+    val recordingCounter: StateFlow<Int> = repo.recordingCounter
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    fun setThemeMode(context: Context, mode: ThemeMode) = viewModelScope.launch { 
         repo.setThemeMode(mode)
-        showAdBriefly()
+        if (!isPro.value) triggerAd(context)
     }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
     fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
     fun setGlobalVibrate(enabled: Boolean) = viewModelScope.launch { repo.setGlobalVibrate(enabled) }
     
-    fun setFontSize(multiplier: Float) = viewModelScope.launch { 
+    fun setFontSize(context: Context, multiplier: Float) = viewModelScope.launch { 
         repo.setFontSizeMultiplier(multiplier)
-        showAdBriefly()
+        if (!isPro.value) triggerAd(context)
     }
-    fun setAppIcon(alias: String) = viewModelScope.launch { 
+    fun setAppIcon(context: Context, alias: String) = viewModelScope.launch { 
         repo.setAppIconAlias(alias)
-        showAdBriefly()
+        if (!isPro.value) triggerAd(context)
     }
-    fun setKeypadDesign(design: KeypadDesign) = viewModelScope.launch { 
+    fun setKeypadDesign(context: Context, design: KeypadDesign) = viewModelScope.launch { 
         repo.setKeypadDesign(design)
-        showAdBriefly()
+        if (!isPro.value) triggerAd(context)
     }
     fun setDefaultDomain(domain: String) = viewModelScope.launch { repo.setDefaultDomain(domain) }
     fun setAdsEnabled(enabled: Boolean) = viewModelScope.launch { repo.setAdsEnabled(enabled) }
+
+    fun redeemPoints(days: Int) = viewModelScope.launch {
+        val cost = when(days) {
+            1 -> 1
+            7 -> 5
+            30 -> 20
+            90 -> 50
+            else -> return@launch
+        }
+        if (proPoints.value >= cost) {
+            repo.setProPoints(proPoints.value - cost)
+            val currentExp = maxOf(proExpiration.value, System.currentTimeMillis())
+            val newExp = currentExp + (days * 24 * 60 * 60 * 1000L)
+            repo.setProExpiration(newExp)
+        }
+    }
+
+    fun watchRewardedAd(context: Context, onReward: () -> Unit) {
+        val rewardedAd = com.startapp.sdk.adsbase.StartAppAd(context)
+        
+        // Define common success logic
+        val grantReward = {
+            viewModelScope.launch {
+                repo.setProPoints(proPoints.value + 1)
+                onReward()
+            }
+        }
+
+        rewardedAd.setVideoListener(object : com.startapp.sdk.adsbase.adlisteners.VideoListener {
+            override fun onVideoCompleted() {
+                grantReward()
+            }
+        })
+
+        rewardedAd.loadAd(com.startapp.sdk.adsbase.StartAppAd.AdMode.REWARDED_VIDEO, object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
+            override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
+                rewardedAd.showAd()
+            }
+            override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                // Fallback to Interstitial if Rewarded fails
+                val interstitialFallback = com.startapp.sdk.adsbase.StartAppAd(context)
+                interstitialFallback.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
+                    override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
+                        interstitialFallback.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
+                            override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
+                            override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {
+                                Toast.makeText(context, "No ads available. Please try again later.", Toast.LENGTH_SHORT).show()
+                            }
+                            override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
+                            override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) {
+                                grantReward()
+                            }
+                        })
+                    }
+                    override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                        Toast.makeText(context, "Failed to load ads. Please check your connection.", Toast.LENGTH_SHORT).show()
+                    }
+                })
+            }
+        })
+    }
+
+    fun incrementRecordingAction(context: Context) = viewModelScope.launch {
+        val next = recordingCounter.value + 1
+        if (next >= 3) {
+            repo.setRecordingCounter(0)
+            if (!isPro.value) triggerAd(context)
+        } else {
+            repo.setRecordingCounter(next)
+        }
+    }
+
+    fun checkCodecChange(context: Context, onConfirm: () -> Unit) {
+        if (isPro.value) {
+            onConfirm()
+        } else {
+            triggerAd(context)
+            onConfirm()
+        }
+    }
+
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -155,6 +248,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
      private var adTimerJob: Job? = null
 
      private fun showAdBriefly(durationMs: Long = 15000L) {
+         if (isPro.value) return
          adTimerJob?.cancel()
          _showAd.value = true
          adTimerJob = viewModelScope.launch {
@@ -613,6 +707,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun triggerAd(context: Context, durationMs: Long = 10000L, autoDismiss: Boolean = true) {
+        if (isPro.value) return
         // Use Start.io Interstitial Ad
         if (interstitialAd == null) {
             interstitialAd = com.startapp.sdk.adsbase.StartAppAd(context)

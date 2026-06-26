@@ -46,6 +46,7 @@ fun HomeScreen(
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val accounts  by vm.accounts.collectAsState()
+    val isPro by vm.isPro.collectAsState()
     val callLog   by vm.callLog.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val contactsState by vm.contacts.collectAsState()
@@ -107,8 +108,9 @@ fun HomeScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
         bottomBar = {
+            val isPro by vm.isPro.collectAsState()
             val showAd by vm.showAd.collectAsState()
-            if (showAd) {
+            if (!isPro && showAd) {
                 com.ipdial.ui.StartIoBanner(
                     vm = vm,
                     modifier = Modifier.fillMaxWidth().padding(8.dp)
@@ -176,6 +178,14 @@ fun HomeScreen(
                                     context.startActivity(intent)
                                 }
                             )
+                        }
+                        if (!isPro) {
+                            item {
+                                com.ipdial.ui.StartIoBanner(
+                                    vm = vm,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+                                )
+                            }
                         }
                     }
 
@@ -277,6 +287,14 @@ fun HomeScreen(
                                      onEdit = { onEditBeforeCall(numberToCopy) },
                                      onDelete = { vm.deleteCallLog(entry) }
                                  )
+                            }
+                        }
+                        if (!isPro) {
+                            item {
+                                com.ipdial.ui.StartIoBanner(
+                                    vm = vm,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+                                )
                             }
                         }
                     }

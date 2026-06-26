@@ -73,8 +73,9 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
         bottomBar = {
+            val isPro by vm.isPro.collectAsState()
             val showAd by vm.showAd.collectAsState()
-            if (showAd) {
+            if (!isPro && showAd) {
                 com.ipdial.ui.StartIoBanner(
                     vm = vm,
                     modifier = Modifier.fillMaxWidth().padding(8.dp)

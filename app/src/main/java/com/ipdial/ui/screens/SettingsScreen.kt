@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -135,7 +136,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     listOf("Small" to 0.85f, "Normal" to 1.0f, "Large" to 1.15f, "Extra Large" to 1.3f).forEach { (label, multiplier) ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                vm.setFontSize(multiplier)
+                                vm.setFontSize(context, multiplier)
                                 showFontSizeDialog = false
                             }.padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -183,7 +184,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                                         )
                                         .clickable {
-                                            vm.setAppIcon(alias)
+                                            vm.setAppIcon(context, alias)
                                             com.ipdial.util.AppIconHelper.setAppIcon(context, alias)
                                             showAppIconDialog = false
                                             showRestartDialog = true
@@ -251,9 +252,11 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         Row(
                             Modifier.fillMaxWidth().clickable {
                                 activeAccount?.let { account ->
-                                    val updated = account.copy(codec = codec)
-                                    vm.saveAccount(updated)
-                                    showCodecDialog = false
+                                    vm.checkCodecChange(context) {
+                                        val updated = account.copy(codec = codec)
+                                        vm.saveAccount(updated)
+                                        showCodecDialog = false
+                                    }
                                 }
                             }.padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -363,6 +366,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.Audiotrack,
                     title = "Select Audio Codec",
                     subtitle = activeAccount?.codec?.name ?: "Select Codec",
+                    isPremium = true,
                     onClick = {
                         if (activeAccount != null) {
                             showCodecDialog = true
@@ -384,6 +388,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         1.3f -> "Extra Large"
                         else -> "Normal"
                     },
+                    isPremium = true,
                     onClick = { showFontSizeDialog = true }
                 )
             }
@@ -393,16 +398,17 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.GridOn,
                     title = "Keypad Design",
                     subtitle = if (keypadDesign == KeypadDesign.Rounded) "Fully Rounded" else "Grid",
+                    isPremium = true,
                     trailing = { 
                         Switch(
                             checked = keypadDesign == KeypadDesign.Rounded, 
                             onCheckedChange = { 
-                                vm.setKeypadDesign(if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
+                                vm.setKeypadDesign(context, if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
                             }
                         ) 
                     },
                     onClick = { 
-                        vm.setKeypadDesign(if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
+                        vm.setKeypadDesign(context, if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
                     }
                 )
             }
@@ -412,6 +418,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.Brush,
                     title = "Choose App Icon",
                     subtitle = appIconAlias,
+                    isPremium = true,
                     onClick = { showAppIconDialog = true }
                 )
             }
@@ -438,13 +445,14 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         ThemeMode.Light -> "Off"
                         ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"
                     },
+                    isPremium = true,
                     trailing = { 
                         Switch(
                             checked = themeMode == ThemeMode.Dark, 
-                            onCheckedChange = { vm.setThemeMode(if (it) ThemeMode.Dark else ThemeMode.Light) } 
+                            onCheckedChange = { vm.setThemeMode(context, if (it) ThemeMode.Dark else ThemeMode.Light) } 
                         ) 
                     },
-                    onClick = { vm.setThemeMode(if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) }
+                    onClick = { vm.setThemeMode(context, if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) }
                 )
             }
 
@@ -497,6 +505,7 @@ fun SettingsRow(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
+    isPremium: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -518,11 +527,22 @@ fun SettingsRow(
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isPremium) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Pro",
+                            tint = Color(0xFFFFB300),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
                 if (!subtitle.isNullOrBlank()) {
                     Text(
                         text = subtitle,

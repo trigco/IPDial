@@ -152,6 +152,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
             Spacer(Modifier.height(32.dp))
             
+            /*
             // Donation Section
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
@@ -206,6 +207,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     )
                 }
             }
+            */
 
             Spacer(Modifier.height(24.dp))
 

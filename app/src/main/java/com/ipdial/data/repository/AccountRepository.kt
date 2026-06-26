@@ -33,6 +33,9 @@ class AccountRepository(private val context: Context) {
     private val DEFAULT_DOMAIN_KEY = stringPreferencesKey("default_domain")
     private val LAST_DIALED_KEY = stringPreferencesKey("last_dialed")
     private val ADS_ENABLED_KEY = booleanPreferencesKey("ads_enabled")
+    private val PRO_POINTS_KEY = androidx.datastore.preferences.core.intPreferencesKey("pro_points")
+    private val PRO_EXPIRATION_KEY = androidx.datastore.preferences.core.longPreferencesKey("pro_expiration")
+    private val RECORDING_COUNTER_KEY = androidx.datastore.preferences.core.intPreferencesKey("recording_counter")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
@@ -71,6 +74,10 @@ class AccountRepository(private val context: Context) {
 
     val adsEnabled: Flow<Boolean> = context.dataStore.data.map { it[ADS_ENABLED_KEY] ?: true }
 
+    val proPoints: Flow<Int> = context.dataStore.data.map { it[PRO_POINTS_KEY] ?: 3 }
+    val proExpiration: Flow<Long> = context.dataStore.data.map { it[PRO_EXPIRATION_KEY] ?: 0L }
+    val recordingCounter: Flow<Int> = context.dataStore.data.map { it[RECORDING_COUNTER_KEY] ?: 0 }
+
     suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[THEME_KEY] = mode.name }
     suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[CALLING_CARDS_KEY] = enabled }
     suspend fun setDnd(enabled: Boolean) = context.dataStore.edit { it[DND_KEY] = enabled }
@@ -82,6 +89,9 @@ class AccountRepository(private val context: Context) {
     suspend fun setDefaultDomain(domain: String) = context.dataStore.edit { it[DEFAULT_DOMAIN_KEY] = domain }
     suspend fun setLastDialedNumber(number: String) = context.dataStore.edit { it[LAST_DIALED_KEY] = number }
     suspend fun setAdsEnabled(enabled: Boolean) = context.dataStore.edit { it[ADS_ENABLED_KEY] = enabled }
+    suspend fun setProPoints(points: Int) = context.dataStore.edit { it[PRO_POINTS_KEY] = points }
+    suspend fun setProExpiration(expiration: Long) = context.dataStore.edit { it[PRO_EXPIRATION_KEY] = expiration }
+    suspend fun setRecordingCounter(counter: Int) = context.dataStore.edit { it[RECORDING_COUNTER_KEY] = counter }
 
     suspend fun setGlobalRingtone(uri: String?) {
         context.dataStore.edit { prefs ->

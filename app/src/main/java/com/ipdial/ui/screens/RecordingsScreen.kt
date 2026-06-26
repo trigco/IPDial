@@ -92,6 +92,7 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             file = file,
                             isPlaying = playingFile == file,
                             onPlay = {
+                                vm.incrementRecordingAction(context)
                                 if (playingFile == file) {
                                     try {
                                         mediaPlayer.stop()
@@ -130,6 +131,7 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 recordings = (iList + eList).sortedByDescending { it.lastModified() }
                             },
                             onShare = {
+                                vm.incrementRecordingAction(context)
                                 try {
                                     val uri = androidx.core.content.FileProvider.getUriForFile(
                                         context,

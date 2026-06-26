@@ -59,8 +59,13 @@ val DotRed    = Color(0xFFF44336)
 val DotAmber  = Color(0xFFFF9800)
 val DotGrey   = Color(0xFF9E9E9E)
 
+val ColorPro = Color(0xFFBC4749) // User requested deep red for Pro accent
+
 @Composable
 fun StartIoBanner(modifier: Modifier = Modifier, vm: SipViewModel? = null) {
+    val isPro = vm?.isPro?.collectAsState()?.value ?: false
+    if (isPro) return
+
     val adsEnabled = vm?.adsEnabled?.collectAsState()?.value ?: true
     
     if (adsEnabled) {
@@ -190,9 +195,16 @@ fun IPDialTopBar(
     vm: SipViewModel? = null,
     onOpenDrawer: () -> Unit
 ) {
+    val isPro = vm?.isPro?.collectAsState()?.value ?: false
+    val appName = if (isPro) "IPDialPro" else "IPDial"
+    val appNameColor = if (isPro) ColorPro else MaterialTheme.colorScheme.primary
+    val themeColor = MaterialTheme.colorScheme.primary
+    val containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
+        color = containerColor,
+        modifier = Modifier.fillMaxWidth(),
+        shadowElevation = 0.dp
     ) {
         Box(
             modifier = Modifier
@@ -217,10 +229,10 @@ fun IPDialTopBar(
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 Text(
-                    text = "IPDial",
+                    text = appName,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = appNameColor
                     ),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     textAlign = TextAlign.Center
@@ -238,7 +250,7 @@ fun IPDialTopBar(
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Menu",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = themeColor,
                     modifier = Modifier.size(20.dp)
                 )
             }

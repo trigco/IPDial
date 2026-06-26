@@ -12,7 +12,7 @@ class IPDialApplication : Application() {
         // Initialize Start.io SDK
         StartAppSDK.init(this, "205857982", true)
         // Enable test ads to verify integration
-        StartAppSDK.setTestAdsEnabled(false)
+        StartAppSDK.setTestAdsEnabled(true)
         // Disable splash screen ads if desired
         StartAppAd.disableSplash()
 

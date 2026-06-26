@@ -194,6 +194,7 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
     object About   : NavDest("about",   "About",    Icons.Default.Info)
     object Recordings: NavDest("recordings", "Recordings", Icons.Default.Mic)
     object Logs    : NavDest("logs",    "Activity Log", Icons.AutoMirrored.Filled.List)
+    object GetPro  : NavDest("get_pro",  "IPDial Pro",   Icons.Default.CardGiftcard)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -301,13 +302,21 @@ fun AppDrawerSheet(
     currentRoute: String,
     onNavigate: (String) -> Unit
 ) {
-    val items = listOf(
-        NavDest.Home,
-        NavDest.Accounts,
-        NavDest.Recordings,
-        NavDest.Settings,
-        NavDest.About
-    )
+    val vm: SipViewModel = viewModel()
+    val isPro by vm.isPro.collectAsState()
+    val proExpiration by vm.proExpiration.collectAsState()
+
+    val items = remember(isPro) {
+        val list = mutableListOf(
+            NavDest.Home,
+            NavDest.Accounts,
+            NavDest.Recordings,
+            NavDest.Settings,
+            NavDest.About
+        )
+        if (isPro) list.add(NavDest.GetPro)
+        list
+    }
 
     ModalDrawerSheet(
         modifier = Modifier.width(300.dp),
@@ -321,12 +330,20 @@ fun AppDrawerSheet(
         )
         HorizontalDivider()
         items.forEach { dest ->
+            val labelText = if (dest == NavDest.GetPro && isPro) {
+                val diff = proExpiration - System.currentTimeMillis()
+                val days = maxOf(0, java.util.concurrent.TimeUnit.MILLISECONDS.toDays(diff) + 1)
+                "${dest.label} ($days days left)"
+            } else dest.label
+
+            val labelColor = if (dest == NavDest.GetPro && isPro) Color(0xFFBC4749) else Color.Unspecified
+            
             NavigationDrawerItem(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                label = { Text(dest.label) },
+                label = { Text(labelText, color = labelColor) },
                 selected = currentRoute == dest.route,
                 onClick = { onNavigate(dest.route) },
-                icon = { Icon(dest.icon, null) }
+                icon = { Icon(dest.icon, null, tint = if (labelColor != Color.Unspecified) labelColor else LocalContentColor.current) }
             )
         }
     }
@@ -367,9 +384,17 @@ fun AppBottomBar(
     callSession: CallSession?,
     showFullIncomingScreen: Boolean
 ) {
-    val bottomTabs = listOf(NavDest.Home, NavDest.Keypad)
+    val vm: SipViewModel = viewModel()
+    val isPro by vm.isPro.collectAsState()
+
+    val bottomTabs = if (isPro) {
+        listOf(NavDest.Home, NavDest.Keypad)
+    } else {
+        listOf(NavDest.Home, NavDest.Keypad, NavDest.GetPro)
+    }
+
     val showBottomBar = (callSession == null || !showFullIncomingScreen) && 
-                        (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route)
+                        (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route || currentRoute == NavDest.GetPro.route)
     
     if (showBottomBar) {
         NavigationBar(tonalElevation = 3.dp) {
@@ -480,6 +505,9 @@ fun AppNavHost(
         }
         composable(NavDest.About.route) { 
             AboutScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+        }
+        composable(NavDest.GetPro.route) {
+            GetProScreen(vm = vm, onOpenDrawer = onOpenDrawer)
         }
     }
 }
