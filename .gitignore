@@ -2,3 +2,11 @@
 /.gradle/
 /app/build/
 /build/
+
+# Keystore
+keystore.properties
+*.keystore
+*.jks
+
+# Google Services
+app/google-services.json

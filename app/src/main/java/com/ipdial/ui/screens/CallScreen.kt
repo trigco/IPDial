@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.blur
 import coil.compose.AsyncImage
 import com.ipdial.data.model.CallSession
 import com.ipdial.data.model.CallState
+import com.ipdial.data.model.AudioDeviceMode
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.theme.EndRed
 import com.ipdial.ui.theme.ForestGreen
@@ -74,9 +75,9 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
     val subtitleColor = if (isFullScreenPhoto) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
 
     // Call timer
-    LaunchedEffect(session.state) {
+    LaunchedEffect(session) {
         if (session.state == CallState.CONFIRMED) {
-            while (true) {
+            while (session.state == CallState.CONFIRMED) {
                 delay(1000)
                 elapsedSeconds++
             }
@@ -248,7 +249,7 @@ fun CallControls(
     onMute: () -> Unit,
     onSpeaker: () -> Unit,
     onRecord: () -> Unit,
-    audioDeviceMode: String = "EARPIECE",
+    audioDeviceMode: AudioDeviceMode = AudioDeviceMode.EARPIECE,
 ) {
     Row(
         modifier = Modifier
@@ -271,20 +272,20 @@ fun CallControls(
 
         // Audio Device Button
         val audioIcon = when (audioDeviceMode) {
-            "SPEAKER" -> Icons.AutoMirrored.Filled.VolumeUp
-            "BLUETOOTH" -> Icons.Default.Bluetooth
+            AudioDeviceMode.SPEAKER -> Icons.AutoMirrored.Filled.VolumeUp
+            AudioDeviceMode.BLUETOOTH -> Icons.Default.Bluetooth
             else -> Icons.Default.PhoneInTalk
         }
         val audioLabel = when (audioDeviceMode) {
-            "SPEAKER" -> "Speaker"
-            "BLUETOOTH" -> "Bluetooth"
+            AudioDeviceMode.SPEAKER -> "Speaker"
+            AudioDeviceMode.BLUETOOTH -> "Bluetooth"
             else -> "Earpiece"
         }
 
         CallControlButton(
             icon = audioIcon,
             label = audioLabel,
-            active = audioDeviceMode != "EARPIECE",
+            active = audioDeviceMode != AudioDeviceMode.EARPIECE,
             enabled = true,
             onClick = onSpeaker
         )

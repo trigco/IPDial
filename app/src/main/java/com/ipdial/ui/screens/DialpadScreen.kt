@@ -36,8 +36,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ipdial.data.model.Contact
+import com.ipdial.data.model.KeypadDesign
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
+import com.ipdial.ui.AccountSelectionDialog
 import com.ipdial.ui.theme.ForestGreen
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -45,6 +47,7 @@ import com.ipdial.ui.theme.ForestGreen
 fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val dialTextFieldValue by vm.dialString.collectAsState()
     val dialString = dialTextFieldValue.text
+    val lastDialedNumber by vm.lastDialedNumber.collectAsState()
     val accounts by vm.accounts.collectAsState()
     val contacts by vm.contacts.collectAsState()
     val mostCalled by vm.mostCalledContacts.collectAsState()
@@ -218,7 +221,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             Triple("#", "", null),
         )
 
-        if (keypadDesign == "Rounded") {
+        if (keypadDesign == KeypadDesign.Rounded) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -231,7 +234,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             .height(80.dp), // Fixed height regardless of font size
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        row.forEachIndexed { colIndex, (digit, sub, _) ->
+                        row.forEach { (digit, sub, _) ->
                             DialKeyRounded(
                                 digit = digit,
                                 subLabel = sub,
@@ -247,12 +250,6 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 } else null,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (colIndex < 2) {
-                                VerticalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.padding(vertical = 12.dp)
-                                )
-                            }
                         }
                     }
                 }
@@ -309,8 +306,12 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 .height(56.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(ForestGreen)
-                .clickableWithRipple(enabled = dialString.isNotEmpty()) { 
-                    vm.makeCall() 
+                .clickableWithRipple { 
+                    if (dialString.isEmpty() && !lastDialedNumber.isNullOrEmpty()) {
+                        vm.setDialString(androidx.compose.ui.text.input.TextFieldValue(lastDialedNumber!!))
+                    } else if (dialString.isNotEmpty()) {
+                        vm.makeCall()
+                    }
                 }
         ) {
             Icon(
@@ -330,45 +331,10 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     }
 
     if (showAccountSelection && enabledAccounts.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { vm.dismissAccountSelection() },
-            title = { Text("Select Account") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    enabledAccounts.forEach { account ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickableWithRipple {
-                                    vm.proceedWithCallAfterAccountSelection(account.id)
-                                }
-                                .padding(vertical = 12.dp, horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = account.label.ifBlank { account.domain },
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                if (account.username.isNotBlank()) {
-                                    Text(
-                                        text = account.username,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.dismissAccountSelection() }) {
-                    Text("Cancel")
-                }
-            }
+        AccountSelectionDialog(
+            enabledAccounts = enabledAccounts,
+            onAccountSelected = { vm.proceedWithCallAfterAccountSelection(it) },
+            onDismiss = { vm.dismissAccountSelection() }
         )
     }
 }

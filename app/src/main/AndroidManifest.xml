@@ -59,11 +59,6 @@
             android:turnScreenOn="true"
             android:windowSoftInputMode="adjustResize"
             tools:targetApi="o_mr1">
-            <!-- Main launcher intent filter -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Deep link for incoming call notification -->
             <intent-filter>
                 <action android:name="com.ipdial.ACTION_INCOMING_CALL" />

@@ -9,9 +9,12 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.ipdial.data.model.KeypadDesign
 import com.ipdial.data.model.SipAccount
+import com.ipdial.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ipdial_accounts")
 
@@ -20,13 +23,15 @@ class AccountRepository(private val context: Context) {
     private val gson = Gson()
     private val ACCOUNTS_KEY = stringPreferencesKey("accounts")
     private val RINGTONE_KEY = stringPreferencesKey("global_ringtone")
-    private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
-    private val CALLING_CARDS_KEY = booleanPreferencesKey("calling_cards")
     private val DND_KEY = booleanPreferencesKey("dnd_enabled")
     private val VIBRATE_KEY = booleanPreferencesKey("global_vibrate")
+    private val THEME_KEY = stringPreferencesKey("theme_mode")
+    private val CALLING_CARDS_KEY = booleanPreferencesKey("calling_cards")
     private val FONT_SIZE_KEY = stringPreferencesKey("font_size_multiplier")
     private val APP_ICON_KEY = stringPreferencesKey("app_icon_alias")
     private val KEYPAD_DESIGN_KEY = stringPreferencesKey("keypad_design")
+    private val DEFAULT_DOMAIN_KEY = stringPreferencesKey("default_domain")
+    private val LAST_DIALED_KEY = stringPreferencesKey("last_dialed")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
@@ -38,7 +43,9 @@ class AccountRepository(private val context: Context) {
         prefs[RINGTONE_KEY] ?: "android.resource://${context.packageName}/raw/ipdial_ringtone"
     }
 
-    val darkModeEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DARK_MODE_KEY] ?: false }
+    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs -> 
+        try { ThemeMode.valueOf(prefs[THEME_KEY] ?: "System") } catch (e: Exception) { ThemeMode.System }
+    }
     val callingCardsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[CALLING_CARDS_KEY] ?: true }
     val dndEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DND_KEY] ?: false }
     val globalVibrate: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[VIBRATE_KEY] ?: true }
@@ -51,18 +58,26 @@ class AccountRepository(private val context: Context) {
         prefs[APP_ICON_KEY] ?: "Default"
     }
 
-    val keypadDesign: Flow<String> = context.dataStore.data.map { prefs -> 
-        prefs[KEYPAD_DESIGN_KEY] ?: "Grid"
+    val keypadDesign: Flow<KeypadDesign> = context.dataStore.data.map { prefs -> 
+        try { KeypadDesign.valueOf(prefs[KEYPAD_DESIGN_KEY] ?: "Grid") } catch (e: Exception) { KeypadDesign.Grid }
     }
 
-    suspend fun setDarkMode(enabled: Boolean) = context.dataStore.edit { it[DARK_MODE_KEY] = enabled }
+    val defaultDomain: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[DEFAULT_DOMAIN_KEY] ?: "sip.amarip.net"
+    }
+
+    val lastDialedNumber: Flow<String?> = context.dataStore.data.map { it[LAST_DIALED_KEY] }
+
+    suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[THEME_KEY] = mode.name }
     suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[CALLING_CARDS_KEY] = enabled }
     suspend fun setDnd(enabled: Boolean) = context.dataStore.edit { it[DND_KEY] = enabled }
     suspend fun setGlobalVibrate(enabled: Boolean) = context.dataStore.edit { it[VIBRATE_KEY] = enabled }
     
     suspend fun setFontSizeMultiplier(multiplier: Float) = context.dataStore.edit { it[FONT_SIZE_KEY] = multiplier.toString() }
     suspend fun setAppIconAlias(alias: String) = context.dataStore.edit { it[APP_ICON_KEY] = alias }
-    suspend fun setKeypadDesign(design: String) = context.dataStore.edit { it[KEYPAD_DESIGN_KEY] = design }
+    suspend fun setKeypadDesign(design: KeypadDesign) = context.dataStore.edit { it[KEYPAD_DESIGN_KEY] = design.name }
+    suspend fun setDefaultDomain(domain: String) = context.dataStore.edit { it[DEFAULT_DOMAIN_KEY] = domain }
+    suspend fun setLastDialedNumber(number: String) = context.dataStore.edit { it[LAST_DIALED_KEY] = number }
 
     suspend fun setGlobalRingtone(uri: String?) {
         context.dataStore.edit { prefs ->

@@ -80,3 +80,9 @@ enum class CallState {
     CONFIRMED,  // Active call
     DISCONNECTED,
 }
+
+enum class KeypadDesign { Grid, Rounded }
+
+enum class ThemeMode { System, Light, Dark }
+
+enum class AudioDeviceMode { EARPIECE, SPEAKER, BLUETOOTH }

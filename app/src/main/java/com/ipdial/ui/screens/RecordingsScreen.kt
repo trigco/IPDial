@@ -44,7 +44,10 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     DisposableEffect(Unit) {
         onDispose {
-            mediaPlayer.release()
+            try {
+                if (mediaPlayer.isPlaying) mediaPlayer.stop()
+                mediaPlayer.release()
+            } catch (e: Exception) {}
         }
     }
 
@@ -66,10 +69,11 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             isPlaying = playingFile == file,
                             onPlay = {
                                 if (playingFile == file) {
-                                    mediaPlayer.stop()
-                                    mediaPlayer.reset()
+                                    try {
+                                        mediaPlayer.stop()
+                                        mediaPlayer.reset()
+                                    } catch (e: Exception) {}
                                     playingFile = null
-                                    vm.dismissAd()
                                 } else {
                                     try {
                                         mediaPlayer.reset()
@@ -77,13 +81,10 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                             mediaPlayer.setDataSource(fis.fd)
                                         }
                                         mediaPlayer.prepare()
-                                        val duration = mediaPlayer.duration.toLong()
                                         mediaPlayer.start()
                                         playingFile = file
-                                        vm.triggerAd(context, duration)
                                         mediaPlayer.setOnCompletionListener { 
                                             playingFile = null
-                                            vm.dismissAd()
                                         }
                                     } catch (e: Exception) {
                                         playingFile = null
@@ -92,19 +93,19 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 }
                             },
                             onDelete = {
+                                if (playingFile == file) {
+                                    try {
+                                        mediaPlayer.stop()
+                                        mediaPlayer.reset()
+                                    } catch (e: Exception) {}
+                                    playingFile = null
+                                }
                                 file.delete()
                                 val iList = if (internalDir.exists()) internalDir.listFiles()?.toList() ?: emptyList() else emptyList()
                                 val eList = if (externalDir.exists()) externalDir.listFiles()?.toList() ?: emptyList() else emptyList()
                                 recordings = (iList + eList).sortedByDescending { it.lastModified() }
-                                if (playingFile == file) {
-                                    mediaPlayer.stop()
-                                    mediaPlayer.reset()
-                                    playingFile = null
-                                    vm.dismissAd()
-                                }
                             },
                             onShare = {
-                                vm.triggerAd(context)
                                 try {
                                     val uri = androidx.core.content.FileProvider.getUriForFile(
                                         context,

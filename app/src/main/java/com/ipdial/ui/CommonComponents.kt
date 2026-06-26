@@ -25,6 +25,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
 import com.ipdial.data.model.RegStatus
 import com.ipdial.data.model.SipAccount
+import com.ipdial.ui.screens.clickableWithRipple
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -241,6 +242,54 @@ fun NumberPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun AccountSelectionDialog(
+    enabledAccounts: List<SipAccount>,
+    onAccountSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Account") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                enabledAccounts.forEach { account ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickableWithRipple {
+                                onAccountSelected(account.id)
+                            }
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = account.label.ifBlank { account.domain },
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            if (account.username.isNotBlank()) {
+                                Text(
+                                    text = account.username,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }

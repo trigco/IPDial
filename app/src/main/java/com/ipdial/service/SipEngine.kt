@@ -1,6 +1,7 @@
 package com.ipdial.service
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.ipdial.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,8 +66,12 @@ object SipEngine {
 
     private fun registerCurrentThread() {
         val ep = endpoint ?: return
-        @Suppress("DEPRECATION")
-        val threadId = Thread.currentThread().id
+        val threadId = if (Build.VERSION.SDK_INT >= 36) {
+            Thread.currentThread().threadId()
+        } else {
+            @Suppress("DEPRECATION")
+            Thread.currentThread().id
+        }
         if (registeredThreads.contains(threadId)) {
             return
         }
@@ -123,8 +128,8 @@ object SipEngine {
                 } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
                 
                 val tlsTpCfg = TransportConfig()
-                tlsTpCfg.tlsConfig.verifyServer = false
-                tlsTpCfg.tlsConfig.verifyClient = false
+                tlsTpCfg.tlsConfig.verifyServer = true
+                tlsTpCfg.tlsConfig.verifyClient = false // Client cert verify usually not needed for mobile apps
                 try {
                     tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
                 } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
@@ -335,7 +340,9 @@ object SipEngine {
             try {
                 val prm = CallOpParam(true).apply { statusCode = pjsip_status_code.PJSIP_SC_OK }
                 call.answer(prm)
-            } catch (e: Throwable) { }
+            } catch (e: Throwable) { 
+                log("answerCall failed: ${e.message}", true)
+            }
         }
     }
 
@@ -347,7 +354,9 @@ object SipEngine {
             try {
                 val prm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_DECLINE }
                 call.hangup(prm)
-            } catch (e: Throwable) { }
+            } catch (e: Throwable) { 
+                log("hangupCall failed: ${e.message}", true)
+            }
         } else {
             _callSession.value = null
         }
@@ -367,7 +376,9 @@ object SipEngine {
                         }
                     }
                     _callSession.value = session.copy(isMuted = muted)
-                } catch (e: Throwable) { }
+                } catch (e: Throwable) { 
+                    log("setMute failed: ${e.message}", true)
+                }
             }
         }
     }
@@ -406,17 +417,24 @@ object SipEngine {
     fun stopRecording() {
         registerCurrentThread()
         try {
-            recorder?.delete()
+            // CRITICAL: Ensure recorder is stopped before deletion
+            recorder?.let {
+                it.delete() // AudioMediaRecorder.delete() usually handles stopping in pjsua2
+            }
             recorder = null
             _callSession.value = _callSession.value?.copy(isRecording = false)
-        } catch (e: Throwable) { }
+        } catch (e: Throwable) { 
+            log("stopRecording failed: ${e.message}", true)
+        }
     }
 
     fun sendDtmf(digit: Char) {
         registerCurrentThread()
         _callSession.value?.let { session ->
             callMap[session.callId]?.let { call ->
-                try { call.dialDtmf(digit.toString()) } catch (e: Throwable) { }
+                try { call.dialDtmf(digit.toString()) } catch (e: Throwable) { 
+                    log("sendDtmf failed: ${e.message}", true)
+                }
             }
         }
     }
@@ -429,7 +447,9 @@ object SipEngine {
                     val prm = CallOpParam()
                     if (onHold) call.setHold(prm) else call.reinvite(prm)
                     _callSession.value = session.copy(isOnHold = onHold)
-                } catch (e: Throwable) { }
+                } catch (e: Throwable) { 
+                    log("holdCall failed: ${e.message}", true)
+                }
             }
         }
     }
@@ -488,7 +508,9 @@ object SipEngine {
             logWriter = null
             
             registeredThreads.clear()
-        } catch (e: Throwable) { }
+        } catch (e: Throwable) { 
+            log("destroy failed: ${e.message}", true)
+        }
     }
 
     class PjAccount(private val accountId: String) : Account() {
@@ -598,7 +620,9 @@ object SipEngine {
                     try {
                         recorder?.delete()
                         recorder = null
-                    } catch (e: Throwable) {}
+                    } catch (e: Throwable) {
+                        log("Failed to delete recorder on disconnect: ${e.message}", true)
+                    }
                     
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
                         try {
@@ -636,7 +660,9 @@ object SipEngine {
                         }
                     }
                 }
-            } catch (e: Throwable) { }
+            } catch (e: Throwable) { 
+                log("PjCall.onCallState failed: ${e.message}", true)
+            }
         }
 
         override fun onCallMediaState(prm: OnCallMediaStateParam) {

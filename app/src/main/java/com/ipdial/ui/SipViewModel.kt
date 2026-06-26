@@ -2,49 +2,43 @@ package com.ipdial.ui
 
 import android.app.Application
 import android.content.Context
-import android.net.*
-import android.telecom.PhoneAccountHandle
-import android.telecom.TelecomManager
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.media.AudioDeviceInfo
-import androidx.lifecycle.AndroidViewModel
 import android.widget.Toast
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ipdial.data.model.*
 import com.ipdial.data.repository.AccountRepository
 import com.ipdial.data.repository.CallLogRepository
 import com.ipdial.data.repository.ContactsRepository
 import com.ipdial.service.SipEngine
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import android.content.Intent
-import android.net.Uri
-import android.os.Handler
-import android.os.Looper
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
+import com.google.gson.Gson
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val SUPPORTED_BALANCE_DOMAINS = listOf("sip.amarip.net", "103.170.231.10")
 
     val repo = AccountRepository(app)
     private val logRepo = CallLogRepository.getInstance(app)
     private val contactsRepo = ContactsRepository(app)
 
-    private val AD_URL = "https://shorturl.at/bwW2s"
-    private var balanceCheckCount = 0
-    private var codecActionCount = 0
-    private val _showAd = MutableStateFlow(false)
-    val showAd: StateFlow<Boolean> = _showAd.asStateFlow()
-
     private val _balances = MutableStateFlow<Map<String, String>>(emptyMap())
     val balances: StateFlow<Map<String, String>> = _balances.asStateFlow()
 
     // Audio device state
-    private val _audioDeviceMode = MutableStateFlow("EARPIECE")
-    val audioDeviceMode: StateFlow<String> = _audioDeviceMode.asStateFlow()
+    private val _audioDeviceMode = MutableStateFlow(AudioDeviceMode.EARPIECE)
+    val audioDeviceMode: StateFlow<AudioDeviceMode> = _audioDeviceMode.asStateFlow()
 
     private val _hasBluetoothDevice = MutableStateFlow(false)
     val hasBluetoothDevice: StateFlow<Boolean> = _hasBluetoothDevice.asStateFlow()
@@ -55,8 +49,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val globalRingtone: StateFlow<String?> = repo.globalRingtone
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val darkModeEnabled: StateFlow<Boolean> = repo.darkModeEnabled
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val themeMode: StateFlow<ThemeMode> = repo.themeMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.System)
         
     val callingCardsEnabled: StateFlow<Boolean> = repo.callingCardsEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -73,17 +67,24 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val appIconAlias: StateFlow<String> = repo.appIconAlias
         .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
         
-    val keypadDesign: StateFlow<String> = repo.keypadDesign
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "Grid")
+    val keypadDesign: StateFlow<KeypadDesign> = repo.keypadDesign
+        .stateIn(viewModelScope, SharingStarted.Eagerly, KeypadDesign.Grid)
 
-    fun setDarkMode(enabled: Boolean) = viewModelScope.launch { repo.setDarkMode(enabled) }
+    val defaultDomain: StateFlow<String> = repo.defaultDomain
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "sip.amarip.net")
+
+    val lastDialedNumber: StateFlow<String?> = repo.lastDialedNumber
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { repo.setThemeMode(mode) }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
     fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
     fun setGlobalVibrate(enabled: Boolean) = viewModelScope.launch { repo.setGlobalVibrate(enabled) }
     
     fun setFontSize(multiplier: Float) = viewModelScope.launch { repo.setFontSizeMultiplier(multiplier) }
     fun setAppIcon(alias: String) = viewModelScope.launch { repo.setAppIconAlias(alias) }
-    fun setKeypadDesign(design: String) = viewModelScope.launch { repo.setKeypadDesign(design) }
+    fun setKeypadDesign(design: KeypadDesign) = viewModelScope.launch { repo.setKeypadDesign(design) }
+    fun setDefaultDomain(domain: String) = viewModelScope.launch { repo.setDefaultDomain(domain) }
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -112,6 +113,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
      private val _isConnected = MutableStateFlow(true)
      val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+     private val _showAd = MutableStateFlow(false)
+     val showAd: StateFlow<Boolean> = _showAd.asStateFlow()
 
     val mostCalledContacts: StateFlow<List<Contact>> = combine(callLog, contacts) { logs, allContacts ->
         val frequencyMap = logs.groupingBy { 
@@ -201,12 +205,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                     updateBluetoothAvailability()
                     
                     // If we are in EARPIECE mode and Bluetooth is available, switch to it
-                    if (_audioDeviceMode.value == "EARPIECE" && _hasBluetoothDevice.value) {
-                        setAudioDevice("BLUETOOTH")
+                    if (_audioDeviceMode.value == AudioDeviceMode.EARPIECE && _hasBluetoothDevice.value) {
+                        setAudioDevice(AudioDeviceMode.BLUETOOTH)
                     }
                 } else if (session == null) {
                     // Reset to EARPIECE when call ends
-                    _audioDeviceMode.value = "EARPIECE"
+                    _audioDeviceMode.value = AudioDeviceMode.EARPIECE
                 }
             }
         }
@@ -375,9 +379,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
          if (callSession.value == null) {
              // Default to Bluetooth if available
              if (_hasBluetoothDevice.value) {
-                 setAudioDevice("BLUETOOTH")
+                 setAudioDevice(AudioDeviceMode.BLUETOOTH)
              } else {
-                 setAudioDevice("EARPIECE")
+                 setAudioDevice(AudioDeviceMode.EARPIECE)
              }
 
              // Use TelecomHelper to place the call for proper system integration
@@ -409,9 +413,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 com.ipdial.service.SipConnectionService.getConnection(id)?.setActive()
                 // Default to Bluetooth if available
                 if (_hasBluetoothDevice.value) {
-                    setAudioDevice("BLUETOOTH")
+                    setAudioDevice(AudioDeviceMode.BLUETOOTH)
                 } else {
-                    setAudioDevice("EARPIECE")
+                    setAudioDevice(AudioDeviceMode.EARPIECE)
                 }
             }
         }
@@ -442,10 +446,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  val hasBt = _hasBluetoothDevice.value
 
                  val nextMode = when (currentMode) {
-                     "EARPIECE" -> "SPEAKER"
-                     "SPEAKER" -> if (hasBt) "BLUETOOTH" else "EARPIECE"
-                     "BLUETOOTH" -> "EARPIECE"
-                     else -> "EARPIECE"
+                     AudioDeviceMode.EARPIECE -> AudioDeviceMode.SPEAKER
+                     AudioDeviceMode.SPEAKER -> if (hasBt) AudioDeviceMode.BLUETOOTH else AudioDeviceMode.EARPIECE
+                     AudioDeviceMode.BLUETOOTH -> AudioDeviceMode.EARPIECE
                  }
 
                  setAudioDevice(nextMode)
@@ -455,14 +458,14 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
          }
      }
 
-     fun setAudioDevice(mode: String) {
+     fun setAudioDevice(mode: AudioDeviceMode) {
          viewModelScope.launch {
              try {
                  _audioDeviceMode.value = mode
                  val app = getApplication<Application>()
                  val serviceIntent = Intent(app, com.ipdial.service.SipService::class.java).apply {
                      action = "com.ipdial.SET_AUDIO_DEVICE"
-                     putExtra("mode", mode)
+                     putExtra("mode", mode.name)
                  }
                  app.startService(serviceIntent)
                  android.util.Log.d("SipViewModel", "Requested audio device: $mode")
@@ -484,8 +487,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  _hasBluetoothDevice.value = hasBt
                  
                  // If Bluetooth was lost and we were in BLUETOOTH mode, fallback to EARPIECE
-                 if (!hasBt && _audioDeviceMode.value == "BLUETOOTH") {
-                     setAudioDevice("EARPIECE")
+                 if (!hasBt && _audioDeviceMode.value == AudioDeviceMode.BLUETOOTH) {
+                     setAudioDevice(AudioDeviceMode.EARPIECE)
                  }
              } catch (e: Exception) {
                  android.util.Log.e("SipViewModel", "Failed to check Bluetooth availability", e)
@@ -573,25 +576,28 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onCodecAction(context: Context) {
-        codecActionCount++
-        triggerAd(context, autoDismiss = false) // Persistent ad for codec actions
+        // Ads dropped
     }
 
     fun fetchBalance(account: SipAccount, context: Context) {
         val host = account.domain
-        if (host != "sip.amarip.net" && host != "103.170.231.10") return
-
-        triggerAd(context)
+        if (!SUPPORTED_BALANCE_DOMAINS.contains(host)) return
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = java.net.URL("https://sip.amarip.net/api/mobile/login")
+                // Use the domain from the account if it's a known server, fallback to default API host
+                val apiHost = if (host == "103.170.231.10") host else "sip.amarip.net"
+                val url = java.net.URL("https://$apiHost/api/mobile/login")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.doOutput = true
 
-                val body = "{\"username\":\"${account.username}\",\"password\":\"${account.password}\"}"
+                val loginData = mapOf(
+                    "username" to account.username,
+                    "password" to account.password
+                )
+                val body = Gson().toJson(loginData)
                 conn.outputStream.use { it.write(body.toByteArray()) }
 
                 if (conn.responseCode == 200) {

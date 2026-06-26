@@ -28,9 +28,7 @@ import androidx.navigation.compose.*
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
-import com.ipdial.data.model.CallDirection
-import com.ipdial.data.model.CallState
-import com.ipdial.data.model.CallSession
+import com.ipdial.data.model.*
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.screens.*
 import com.ipdial.ui.theme.IPDialTheme
@@ -43,13 +41,8 @@ import androidx.activity.viewModels
 
 import androidx.activity.enableEdgeToEdge
 
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 
 object AppState {
     var isForeground = false
@@ -80,9 +73,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val testCallNumber = mutableStateOf<String?>(null)
-    private val triggerHangup = mutableStateOf(false)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -96,9 +86,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val vm: SipViewModel = viewModel()
-            val darkMode by vm.darkModeEnabled.collectAsState()
+            val themeMode by vm.themeMode.collectAsState()
             val fontMultiplier by vm.fontSizeMultiplier.collectAsState()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+            val darkTheme = when (themeMode) {
+                ThemeMode.Dark -> true
+                ThemeMode.Light -> false
+                else -> systemDark
+            }
 
             // Keep screen on when there's an active call
             val callSession by vm.callSession.collectAsState()
@@ -119,10 +115,10 @@ class MainActivity : ComponentActivity() {
             }
 
             IPDialTheme(
-                darkTheme = darkMode || systemDark,
+                darkTheme = darkTheme,
                 fontMultiplier = fontMultiplier
             ) {
-                IPDialApp(testCallNumber, triggerHangup)
+                IPDialApp()
             }
         }
     }
@@ -155,10 +151,10 @@ class MainActivity : ComponentActivity() {
             if (i.action == "com.ipdial.TEST_CALL") {
                 val num = i.getStringExtra("number")
                 if (!num.isNullOrBlank()) {
-                    testCallNumber.value = num
+                    vm.makeCall(num)
                 }
             } else if (i.action == "com.ipdial.TEST_HANGUP") {
-                triggerHangup.value = true
+                vm.hangup()
             }
         }
     }
@@ -198,10 +194,7 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IPDialApp(
-    testCallNumber: MutableState<String?> = mutableStateOf(null),
-    triggerHangup: MutableState<Boolean> = mutableStateOf(false)
-) {
+fun IPDialApp() {
     val vm: SipViewModel = viewModel()
     val callSession by vm.callSession.collectAsState()
     val callingCardsEnabled by vm.callingCardsEnabled.collectAsState()
@@ -213,31 +206,58 @@ fun IPDialApp(
             showFullIncomingScreen = false
         } else if (session.direction == CallDirection.INCOMING && 
                    (session.state == CallState.INCOMING || session.state == CallState.EARLY)) {
-            // Always show full screen immediately for incoming calls to ensure screen wakes up
             showFullIncomingScreen = true
         } else {
             showFullIncomingScreen = true
         }
     }
     
-    LaunchedEffect(testCallNumber.value, triggerHangup.value) {
-        testCallNumber.value?.let { number ->
-            vm.makeCall(number)
-            testCallNumber.value = null
-        }
-        if (triggerHangup.value) {
-            vm.hangup()
-            triggerHangup.value = false
-        }
-    }
     val navController = rememberNavController()
     val navBackStack by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStack?.destination?.route
+    val currentRoute = navBackStack?.destination?.route ?: NavDest.Home.route
 
-    val bottomTabs = listOf(NavDest.Home, NavDest.Keypad)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
+    UpdateCheckDialog()
+
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+
+    CompositionLocalProvider(LocalLayoutDirection provides (if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr)) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                AppDrawerSheet(
+                    currentRoute = currentRoute,
+                    onNavigate = { route ->
+                        scope.launch { drawerState.close() }
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    isRtl = isRtl
+                )
+            }
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                AppScaffold(
+                    vm = vm,
+                    navController = navController,
+                    currentRoute = currentRoute,
+                    callSession = callSession,
+                    showFullIncomingScreen = showFullIncomingScreen,
+                    onOpenDrawer = { scope.launch { drawerState.open() } },
+                    onShowFullIncoming = { showFullIncomingScreen = true }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun UpdateCheckDialog() {
     var updateRelease by remember { mutableStateOf<com.ipdial.util.UpdateChecker.GitHubRelease?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -265,326 +285,239 @@ fun IPDialApp(
             }
         )
     }
+}
 
-    val activeCallSession = callSession
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppDrawerSheet(
+    currentRoute: String,
+    onNavigate: (String) -> Unit,
+    isRtl: Boolean
+) {
+    val items = listOf(
+        NavDest.Home,
+        NavDest.Accounts,
+        NavDest.Recordings,
+        NavDest.Settings,
+        NavDest.About
+    )
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    ModalDrawerSheet(
-                        modifier = Modifier.width(300.dp),
-                        drawerShape = androidx.compose.ui.graphics.RectangleShape
-                    ) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Menu",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        HorizontalDivider()
-                        NavigationDrawerItem(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                            label = { Text("Home") },
-                            selected = currentRoute == NavDest.Home.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Home.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(NavDest.Home.icon, null) }
-                        )
-                        NavigationDrawerItem(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                            label = { Text("Accounts") },
-                            selected = currentRoute == NavDest.Accounts.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Accounts.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(NavDest.Accounts.icon, null) }
-                        )
-                        NavigationDrawerItem(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                            label = { Text("Recordings") },
-                            selected = currentRoute == NavDest.Recordings.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Recordings.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(NavDest.Recordings.icon, null) }
-                        )
-
-                        NavigationDrawerItem(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                            label = { Text("Settings") },
-                            selected = currentRoute == NavDest.Settings.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Settings.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(NavDest.Settings.icon, null) }
-                        )
-                        NavigationDrawerItem(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                            label = { Text("About") },
-                            selected = currentRoute == NavDest.About.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.About.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(NavDest.About.icon, null) }
-                        )
-                    }
-                }
-            }
+    CompositionLocalProvider(LocalLayoutDirection provides (if (isRtl) LayoutDirection.Ltr else LayoutDirection.Rtl)) {
+        ModalDrawerSheet(
+            modifier = Modifier.width(300.dp),
+            drawerShape = androidx.compose.ui.graphics.RectangleShape
         ) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Scaffold(
-                    contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
-                    bottomBar = {
-                        val showBottomBar = (activeCallSession == null || !showFullIncomingScreen) && (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route)
-                        if (showBottomBar) {
-                            NavigationBar(tonalElevation = 3.dp) {
-                                bottomTabs.forEach { dest ->
-                                    NavigationBarItem(
-                                        selected = currentRoute == dest.route,
-                                        onClick = {
-                                            navController.navigate(dest.route) {
-                                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                                launchSingleTop = true
-                                                restoreState = true
-                                            }
-                                        },
-                                        icon = { Icon(dest.icon, dest.label) },
-                                        label = { Text(dest.label) },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                ) { innerPadding ->
-                    if (activeCallSession != null && showFullIncomingScreen) {
-                        when (activeCallSession.direction) {
-                            CallDirection.INCOMING -> {
-                                if (activeCallSession.state == CallState.INCOMING || 
-                                     activeCallSession.state == CallState.EARLY) {
-                                    IncomingCallScreen(vm = vm, session = activeCallSession)
-                                } else {
-                                    CallScreen(vm = vm, session = activeCallSession)
-                                }
-                            }
-                            else -> {
-                                CallScreen(vm = vm, session = activeCallSession)
-                            }
-                        }
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            NavHost(
-                                navController = navController,
-                                startDestination = NavDest.Home.route,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(innerPadding)
-                            ) {
-                                composable(NavDest.Home.route) { 
-                                    HomeScreen(
-                                        vm = vm, 
-                                        onOpenDrawer = { scope.launch { drawerState.open() } },
-                                        onEditBeforeCall = { number ->
-                                            vm.prefillDialer(number)
-                                            navController.navigate(NavDest.Keypad.route) {
-                                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                                launchSingleTop = true
-                                                restoreState = true
-                                            }
-                                        }
-                                    ) 
-                                }
-                                composable(NavDest.Keypad.route) { 
-                                    DialpadScreen(
-                                        vm = vm, 
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    ) 
-                                }
-                                composable(NavDest.Contacts.route) { 
-                                    ContactsScreen(
-                                        vm = vm, 
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    ) 
-                                }
-                                composable(NavDest.Settings.route) { 
-                                    SettingsScreen(
-                                        vm = vm, 
-                                        onOpenDrawer = { scope.launch { drawerState.open() } },
-                                        onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
-                                    ) 
-                                }
-                                composable(NavDest.Accounts.route) { 
-                                    AccountsScreen(
-                                        vm = vm, 
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    ) 
-                                }
-                                composable(NavDest.Recordings.route) {
-                                    RecordingsScreen(
-                                        vm = vm,
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    )
-                                }
-                                composable(NavDest.Logs.route) {
-                                    ActivityLogScreen(
-                                        vm = vm,
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    )
-                                }
-                                composable(NavDest.About.route) { 
-                                    AboutScreen(
-                                        vm = vm,
-                                        onOpenDrawer = { scope.launch { drawerState.open() } }
-                                    )
-                                }
-                            }
-
-                            // If there is an incoming call, but we are not showing full screen, show the banner!
-                            if (activeCallSession != null && 
-                                activeCallSession.direction == CallDirection.INCOMING &&
-                                (activeCallSession.state == CallState.INCOMING || activeCallSession.state == CallState.EARLY)) {
-                                
-                                val contacts by vm.contacts.collectAsState()
-                                val contact = remember(activeCallSession.remoteUri, contacts) {
-                                    val cleanedSessionUriDigits = vm.cleanUri(activeCallSession.remoteUri).filter { it.isDigit() }
-                                    if (cleanedSessionUriDigits.length < 10) {
-                                        null
-                                    } else {
-                                        contacts.find { c ->
-                                            c.numbers.any { n ->
-                                                val cleanedContactNumberDigits = n.filter { it.isDigit() }
-                                                cleanedContactNumberDigits.length >= 10 &&
-                                                (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
-                                            }
-                                        }
-                                    }
-                                }
-                                val displayName = contact?.name ?: activeCallSession.remoteDisplayName.ifBlank { vm.cleanUri(activeCallSession.remoteUri) }
-
-                                IncomingCallBanner(
-                                    displayName = displayName,
-                                    onAnswer = { vm.answerCall() },
-                                    onDecline = { vm.hangup() },
-                                    onClick = { showFullIncomingScreen = true }
-                                )
-                            }
-                            
-                            val showAd by vm.showAd.collectAsState()
-                            if (showAd) {
-                                AdDialog(onDismiss = { vm.dismissAd() })
-                            }
-                        }
-                    }
-                }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Menu",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge
+            )
+            HorizontalDivider()
+            items.forEach { dest ->
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
+                    label = { Text(dest.label) },
+                    selected = currentRoute == dest.route,
+                    onClick = { onNavigate(dest.route) },
+                    icon = { Icon(dest.icon, null) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AdDialog(onDismiss: () -> Unit) {
-    Popup(
-        alignment = Alignment.BottomCenter,
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true
+fun AppScaffold(
+    vm: SipViewModel,
+    navController: androidx.navigation.NavHostController,
+    currentRoute: String,
+    callSession: CallSession?,
+    showFullIncomingScreen: Boolean,
+    onOpenDrawer: () -> Unit,
+    onShowFullIncoming: () -> Unit
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
+        bottomBar = {
+            AppBottomBar(navController, currentRoute, callSession, showFullIncomingScreen)
+        }
+    ) { innerPadding ->
+        AppMainContent(
+            vm = vm,
+            navController = navController,
+            innerPadding = innerPadding,
+            callSession = callSession,
+            showFullIncomingScreen = showFullIncomingScreen,
+            onOpenDrawer = onOpenDrawer,
+            onShowFullIncoming = onShowFullIncoming
         )
-    ) {
-        Surface(
-            modifier = Modifier
-                .padding(horizontal = 0.dp, vertical = 24.dp)
-                .width(320.dp)
-                .wrapContentHeight(),
-            shape = RoundedCornerShape(4.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 4.dp,
-            shadowElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(0.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(20.dp).padding(2.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close, 
-                            contentDescription = "Close Ad",
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .width(320.dp)
-                        .height(90.dp)
-                ) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
-                                settings.javaScriptEnabled = true
-                                webViewClient = WebViewClient()
-                                val html = """
-                                    <html>
-                                    <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;background-color:transparent;">
-                                        <script>
-                                          atOptions = {
-                                            'key' : '408102d569914168e5792b69e28d7e6d',
-                                            'format' : 'iframe',
-                                            'height' : 90,
-                                            'width' : 728,
-                                            'params' : {}
-                                          };
-                                        </script>
-                                        <script src="https://www.highperformanceformat.com/408102d569914168e5792b69e28d7e6d/invoke.js"></script>
-                                    </body>
-                                    </html>
-                                """.trimIndent()
-                                loadDataWithBaseURL("https://www.highperformanceformat.com", html, "text/html", "UTF-8", null)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+    }
+}
+
+@Composable
+fun AppBottomBar(
+    navController: androidx.navigation.NavHostController,
+    currentRoute: String,
+    callSession: CallSession?,
+    showFullIncomingScreen: Boolean
+) {
+    val bottomTabs = listOf(NavDest.Home, NavDest.Keypad)
+    val showBottomBar = (callSession == null || !showFullIncomingScreen) && 
+                        (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route)
+    
+    if (showBottomBar) {
+        NavigationBar(tonalElevation = 3.dp) {
+            bottomTabs.forEach { dest ->
+                NavigationBarItem(
+                    selected = currentRoute == dest.route,
+                    onClick = {
+                        navController.navigate(dest.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    icon = { Icon(dest.icon, dest.label) },
+                    label = { Text(dest.label) },
+                )
             }
         }
     }
+}
+
+@Composable
+fun AppMainContent(
+    vm: SipViewModel,
+    navController: androidx.navigation.NavHostController,
+    innerPadding: PaddingValues,
+    callSession: CallSession?,
+    showFullIncomingScreen: Boolean,
+    onOpenDrawer: () -> Unit,
+    onShowFullIncoming: () -> Unit
+) {
+    if (callSession != null && showFullIncomingScreen) {
+        CallOverlay(vm, callSession)
+    } else {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AppNavHost(vm, navController, innerPadding, onOpenDrawer)
+            
+            IncomingCallBannerOverlay(vm, callSession, onShowFullIncoming)
+        }
+    }
+}
+
+@Composable
+fun CallOverlay(vm: SipViewModel, session: CallSession) {
+    when (session.direction) {
+        CallDirection.INCOMING -> {
+            if (session.state == CallState.INCOMING || session.state == CallState.EARLY) {
+                IncomingCallScreen(vm = vm, session = session)
+            } else {
+                CallScreen(vm = vm, session = session)
+            }
+        }
+        else -> {
+            CallScreen(vm = vm, session = session)
+        }
+    }
+}
+
+@Composable
+fun AppNavHost(
+    vm: SipViewModel,
+    navController: androidx.navigation.NavHostController,
+    innerPadding: PaddingValues,
+    onOpenDrawer: () -> Unit
+) {
+    NavHost(
+        navController = navController,
+        startDestination = NavDest.Home.route,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+    ) {
+        composable(NavDest.Home.route) { 
+            HomeScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onEditBeforeCall = { number ->
+                    vm.prefillDialer(number)
+                    navController.navigate(NavDest.Keypad.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            ) 
+        }
+        composable(NavDest.Keypad.route) { 
+            DialpadScreen(vm = vm, onOpenDrawer = onOpenDrawer) 
+        }
+        composable(NavDest.Contacts.route) { 
+            ContactsScreen(vm = vm, onOpenDrawer = onOpenDrawer) 
+        }
+        composable(NavDest.Settings.route) { 
+            SettingsScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
+            ) 
+        }
+        composable(NavDest.Accounts.route) { 
+            AccountsScreen(vm = vm, onOpenDrawer = onOpenDrawer) 
+        }
+        composable(NavDest.Recordings.route) {
+            RecordingsScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+        }
+        composable(NavDest.Logs.route) {
+            ActivityLogScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+        }
+        composable(NavDest.About.route) { 
+            AboutScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+        }
+    }
+}
+
+@Composable
+fun IncomingCallBannerOverlay(
+    vm: SipViewModel,
+    callSession: CallSession?,
+    onShowFullIncoming: () -> Unit
+) {
+    if (callSession != null && 
+        callSession.direction == CallDirection.INCOMING &&
+        (callSession.state == CallState.INCOMING || callSession.state == CallState.EARLY)) {
+        
+        val contacts by vm.contacts.collectAsState()
+        val contact = remember(callSession.remoteUri, contacts) {
+            val cleanedSessionUriDigits = vm.cleanUri(callSession.remoteUri).filter { it.isDigit() }
+            if (cleanedSessionUriDigits.length < 10) {
+                null
+            } else {
+                contacts.find { c ->
+                    c.numbers.any { n ->
+                        val cleanedContactNumberDigits = n.filter { it.isDigit() }
+                        cleanedContactNumberDigits.length >= 10 &&
+                        (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                    }
+                }
+            }
+        }
+        val displayName = contact?.name ?: callSession.remoteDisplayName.ifBlank { vm.cleanUri(callSession.remoteUri) }
+
+        IncomingCallBanner(
+            displayName = displayName,
+            onAnswer = { vm.answerCall() },
+            onDecline = { vm.hangup() },
+            onClick = onShowFullIncoming
+        )
+    }
+}
+
+@Composable
+fun AdDialog(onDismiss: () -> Unit) {
+    // AdDialog removed
 }
 
 @Composable

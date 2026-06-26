@@ -32,6 +32,7 @@ import com.ipdial.data.model.*
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.NumberPickerDialog
+import com.ipdial.ui.AccountSelectionDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -284,45 +285,10 @@ fun HomeScreen(
     }
 
     if (showAccountSelection && enabledAccounts.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { vm.dismissAccountSelection() },
-            title = { Text("Select Account") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    enabledAccounts.forEach { account ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickableWithRipple {
-                                    vm.proceedWithCallAfterAccountSelection(account.id)
-                                }
-                                .padding(vertical = 12.dp, horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = account.label.ifBlank { account.domain },
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                if (account.username.isNotBlank()) {
-                                    Text(
-                                        text = account.username,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.dismissAccountSelection() }) {
-                    Text("Cancel")
-                }
-            }
+        AccountSelectionDialog(
+            enabledAccounts = enabledAccounts,
+            onAccountSelected = { vm.proceedWithCallAfterAccountSelection(it) },
+            onDismiss = { vm.dismissAccountSelection() }
         )
     }
 

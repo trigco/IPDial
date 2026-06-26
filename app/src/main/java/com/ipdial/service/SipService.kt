@@ -19,9 +19,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.ipdial.MainActivity
 import com.ipdial.R
-import com.ipdial.data.model.CallDirection
-import com.ipdial.data.model.CallState
-import com.ipdial.data.model.RegStatus
+import com.ipdial.data.model.*
 import com.ipdial.data.repository.AccountRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -114,6 +112,7 @@ class SipService : Service() {
     private lateinit var audioManager: AudioManager
     private lateinit var repo: AccountRepository
     private var wakeLock: PowerManager.WakeLock? = null
+    private var cpuWakeLock: PowerManager.WakeLock? = null
     private val activeConfigs = java.util.concurrent.ConcurrentHashMap<String, com.ipdial.data.model.SipAccount>()
     private var isConnected = false
     private var lastNetwork: Network? = null
@@ -143,32 +142,36 @@ class SipService : Service() {
             
             Handler(Looper.getMainLooper()).post {
                 SipEngine.onIncomingCall = { session -> 
-                    val isDnd = kotlinx.coroutines.runBlocking { repo.dndEnabled.first() }
-                    if (isDnd) {
-                        SipEngine.hangupCall(session.callId)
-                    } else {
-                        // Resolve contact name or clean number
-                        val displayName = session.remoteDisplayName
-                        val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
-                        
-                        val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
-                        val contacts = kotlinx.coroutines.runBlocking { contactsRepo.getContacts("") }
-                        val cleanedSessionDigits = cleanNum.filter { it.isDigit() }
-                        
-                        var matchedContact: com.ipdial.data.model.Contact? = null
-                        if (cleanedSessionDigits.length >= 10) {
-                            matchedContact = contacts.find { c ->
-                                c.numbers.any { n ->
-                                    val cleanedContactDigits = n.filter { it.isDigit() }
-                                    cleanedContactDigits.length >= 10 && (cleanedSessionDigits.contains(cleanedContactDigits) || cleanedContactDigits.contains(cleanedSessionDigits))
+                    scope.launch {
+                        val isDnd = repo.dndEnabled.first()
+                        if (isDnd) {
+                            SipEngine.hangupCall(session.callId)
+                        } else {
+                            // Resolve contact name or clean number
+                            val displayName = session.remoteDisplayName
+                            val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
+                            
+                            val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
+                            val contacts = contactsRepo.getContacts("")
+                            val cleanedSessionDigits = cleanNum.filter { it.isDigit() }
+                            
+                            var matchedContact: com.ipdial.data.model.Contact? = null
+                            if (cleanedSessionDigits.length >= 10) {
+                                matchedContact = contacts.find { c ->
+                                    c.numbers.any { n ->
+                                        val cleanedContactDigits = n.filter { it.isDigit() }
+                                        cleanedContactDigits.length >= 10 && (cleanedSessionDigits.contains(cleanedContactDigits) || cleanedContactDigits.contains(cleanedSessionDigits))
+                                    }
                                 }
                             }
+                            
+                            val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
+                            
+                            withContext(Dispatchers.Main) {
+                                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
+                                showIncomingCallNotification(finalDisplayName, session.callId)
+                            }
                         }
-                        
-                        val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
-                        
-                        TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
-                        showIncomingCallNotification(finalDisplayName, session.callId)
                     }
                 }
             }
@@ -293,12 +296,12 @@ class SipService : Service() {
                 cancelIncomingNotification()
             }
             ACTION_SET_AUDIO_DEVICE -> {
-                val mode = intent.getStringExtra("mode") ?: "EARPIECE"
+                val mode = intent.getStringExtra("mode") ?: AudioDeviceMode.EARPIECE.name
                 Log.d("SipService", "ACTION_SET_AUDIO_DEVICE: $mode")
                 when (mode) {
-                    "EARPIECE" -> routeAudioToEarpiece()
-                    "SPEAKER" -> routeAudioToSpeaker(true)
-                    "BLUETOOTH" -> routeAudioToBluetooth()
+                    AudioDeviceMode.EARPIECE.name -> routeAudioToEarpiece()
+                    AudioDeviceMode.SPEAKER.name -> routeAudioToSpeaker(true)
+                    AudioDeviceMode.BLUETOOTH.name -> routeAudioToBluetooth()
                 }
             }
             ACTION_HANGUP -> SipEngine.hangupCall()
@@ -414,34 +417,34 @@ class SipService : Service() {
 
     private fun playRingtone() {
         if (ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) return
-        try {
-            val ringtoneUriStr = kotlinx.coroutines.runBlocking {
-                repo.globalRingtone.first()
-            }
-            
-            if (ringtoneUriStr == "android.resource://$packageName/raw/ipdial_ringtone") {
-                mediaPlayer = android.media.MediaPlayer.create(applicationContext, R.raw.ipdial_ringtone)
-                mediaPlayer?.isLooping = true
-                mediaPlayer?.start()
-            } else {
-                val ringtoneUri = ringtoneUriStr?.let { android.net.Uri.parse(it) }
-                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        scope.launch {
+            try {
+                val ringtoneUriStr = repo.globalRingtone.first()
+                val vibrateEnabled = repo.globalVibrate.first()
                 
-                ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    ringtone?.isLooping = true
+                withContext(Dispatchers.Main) {
+                    if (ringtoneUriStr == "android.resource://$packageName/raw/ipdial_ringtone") {
+                        mediaPlayer = android.media.MediaPlayer.create(applicationContext, R.raw.ipdial_ringtone)
+                        mediaPlayer?.isLooping = true
+                        mediaPlayer?.start()
+                    } else {
+                        val ringtoneUri = ringtoneUriStr?.let { android.net.Uri.parse(it) }
+                            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                        
+                        ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            ringtone?.isLooping = true
+                        }
+                        ringtone?.play()
+                    }
+                    
+                    if (vibrateEnabled) {
+                        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
+                    }
                 }
-                ringtone?.play()
+            } catch (e: Exception) {
+                Log.e("SipService", "Failed to play ringtone", e)
             }
-            
-            // Vibrate if setting is enabled
-            kotlinx.coroutines.runBlocking {
-                if (repo.globalVibrate.first()) {
-                    vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("SipService", "Failed to play ringtone", e)
         }
     }
 
@@ -680,9 +683,13 @@ class SipService : Service() {
 
 
     private fun restoreAudio() {
-        audioManager.mode = AudioManager.MODE_NORMAL
+        if (audioManager.mode != AudioManager.MODE_NORMAL) {
+            audioManager.mode = AudioManager.MODE_NORMAL
+        }
         @Suppress("DEPRECATION")
-        audioManager.isSpeakerphoneOn = false
+        if (audioManager.isSpeakerphoneOn) {
+            audioManager.isSpeakerphoneOn = false
+        }
         @Suppress("DEPRECATION")
         if (audioManager.isBluetoothScoOn) {
             @Suppress("DEPRECATION")
@@ -691,17 +698,34 @@ class SipService : Service() {
             audioManager.isBluetoothScoOn = false
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.clearCommunicationDevice()
+            try {
+                audioManager.clearCommunicationDevice()
+            } catch (e: Exception) {
+                Log.e("SipService", "Failed to clear communication device", e)
+            }
         }
     }
 
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
+        
+        // Proximity sensor to turn off screen when near ear
         wakeLock = pm.newWakeLock(
             PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
             "IPDial:call"
-        ).apply { acquire(60 * 60 * 1000L) }
+        ).apply { 
+            setReferenceCounted(false)
+            acquire(60 * 60 * 1000L) 
+        }
+
+        // Partial wake lock to keep CPU alive during call even if screen is off
+        if (cpuWakeLock == null) {
+            cpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IPDial:cpu_call").apply {
+                setReferenceCounted(false)
+                acquire(60 * 60 * 1000L)
+            }
+        }
     }
 
     private fun acquireWakeLockForIncoming() {
@@ -721,6 +745,8 @@ class SipService : Service() {
     private fun releaseWakeLock() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        cpuWakeLock?.let { if (it.isHeld) it.release() }
+        cpuWakeLock = null
     }
 
     private fun createNotificationChannels() {

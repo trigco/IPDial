@@ -36,6 +36,7 @@ import com.ipdial.ui.RegStatusIndicator
 @Composable
 fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val accounts by vm.accounts.collectAsState()
+    val defaultDomain by vm.defaultDomain.collectAsState()
     var editingAccount by remember { mutableStateOf<SipAccount?>(null) }
     var showEditSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -77,6 +78,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         if (showEditSheet) {
             AccountEditSheet(
                 existing = editingAccount,
+                defaultDomain = defaultDomain,
                 onSave = { vm.saveAccount(it); showEditSheet = false },
                 onDismiss = { showEditSheet = false }
             )
@@ -169,13 +171,14 @@ fun AccountSettingsRow(
 @Composable
 fun AccountEditSheet(
     existing: SipAccount?,
+    defaultDomain: String,
     onSave: (SipAccount) -> Unit,
     onDismiss: () -> Unit
 ) {
     var label     by remember { mutableStateOf(existing?.label ?: "") }
     var username  by remember { mutableStateOf(existing?.username ?: "") }
     var password  by remember { mutableStateOf(existing?.password ?: "") }
-    var domain    by remember { mutableStateOf(existing?.domain ?: "") }
+    var domain    by remember { mutableStateOf(existing?.domain ?: defaultDomain) }
     var proxy     by remember { mutableStateOf(existing?.proxy ?: "") }
     var port      by remember { mutableStateOf(existing?.port?.toString() ?: "") }
     var transport by remember { mutableStateOf(existing?.transport ?: Transport.UDP) }

@@ -98,6 +98,33 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     var showCodecDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showAppIconDialog by remember { mutableStateOf(false) }
+    var showDefaultDomainDialog by remember { mutableStateOf(false) }
+
+    if (showDefaultDomainDialog) {
+        var tempDomain by remember { mutableStateOf(vm.defaultDomain.value) }
+        AlertDialog(
+            onDismissRequest = { showDefaultDomainDialog = false },
+            title = { Text("Set Default Domain") },
+            text = {
+                OutlinedTextField(
+                    value = tempDomain,
+                    onValueChange = { tempDomain = it },
+                    label = { Text("SIP Domain") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.setDefaultDomain(tempDomain)
+                    showDefaultDomainDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDefaultDomainDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     if (showFontSizeDialog) {
         AlertDialog(
@@ -363,19 +390,17 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 SettingsRow(
                     icon = Icons.Default.GridOn,
                     title = "Keypad Design",
-                    subtitle = if (keypadDesign == "Rounded") "Fully Rounded" else "Grid",
+                    subtitle = if (keypadDesign == KeypadDesign.Rounded) "Fully Rounded" else "Grid",
                     trailing = { 
                         Switch(
-                            checked = keypadDesign == "Rounded", 
+                            checked = keypadDesign == KeypadDesign.Rounded, 
                             onCheckedChange = { 
-                                vm.setKeypadDesign(if (it) "Rounded" else "Grid")
-                                vm.triggerAd(context) // Trigger ad for keypad design toggle
+                                vm.setKeypadDesign(if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
                             }
                         ) 
                     },
                     onClick = { 
-                        vm.setKeypadDesign(if (keypadDesign == "Rounded") "Grid" else "Rounded")
-                        vm.triggerAd(context) // Trigger ad for keypad design toggle
+                        vm.setKeypadDesign(if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
                     }
                 )
             }
@@ -401,13 +426,33 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             }
 
             item {
-                val darkModeEnabled by vm.darkModeEnabled.collectAsState()
+                val themeMode by vm.themeMode.collectAsState()
+                val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
                 SettingsRow(
                     icon = Icons.Default.DisplaySettings,
                     title = "Dark Mode",
-                    subtitle = "Dark mode",
-                    trailing = { Switch(checked = darkModeEnabled, onCheckedChange = { vm.setDarkMode(it) }) },
-                    onClick = { vm.setDarkMode(!darkModeEnabled) }
+                    subtitle = when(themeMode) {
+                        ThemeMode.Dark -> "On"
+                        ThemeMode.Light -> "Off"
+                        ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"
+                    },
+                    trailing = { 
+                        Switch(
+                            checked = themeMode == ThemeMode.Dark, 
+                            onCheckedChange = { vm.setThemeMode(if (it) ThemeMode.Dark else ThemeMode.Light) } 
+                        ) 
+                    },
+                    onClick = { vm.setThemeMode(if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) }
+                )
+            }
+
+            item {
+                val defaultDomain by vm.defaultDomain.collectAsState()
+                SettingsRow(
+                    icon = Icons.Default.Public,
+                    title = "Default SIP Domain",
+                    subtitle = defaultDomain,
+                    onClick = { showDefaultDomainDialog = true }
                 )
             }
             
