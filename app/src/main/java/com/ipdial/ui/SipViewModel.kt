@@ -169,6 +169,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun watchRewardedAd(context: Context, onReward: () -> Unit) {
+        if (_isLoadingAd.value) return
+        _isLoadingAd.value = true
+
         val rewardedAd = com.startapp.sdk.adsbase.StartAppAd(context)
         
         // Define common success logic
@@ -179,6 +182,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 // push update to Firestore
                 try { firestoreSync?.pushUpdate(newPoints, proExpiration.value) } catch (_: Exception) {}
                 onReward()
+                _isLoadingAd.value = false
             }
         }
 
@@ -206,17 +210,32 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             onComplete?.invoke()
             return
         }
+        if (_isLoadingAd.value && onComplete != null) {
+            // Already loading, don't trigger another one if we have a callback
+            // But we might want to still allow it if called from a different context?
+            // For safety, let's just use the same lock.
+            return
+        }
+        _isLoadingAd.value = true
+
         val startAppAd = com.startapp.sdk.adsbase.StartAppAd(context)
         startAppAd.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
             override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
                 startAppAd.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
                     override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
-                    override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) { onComplete?.invoke() }
+                    override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) { 
+                        _isLoadingAd.value = false
+                        onComplete?.invoke() 
+                    }
                     override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
-                    override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) { onComplete?.invoke() }
+                    override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) { 
+                        _isLoadingAd.value = false
+                        onComplete?.invoke() 
+                    }
                 })
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                _isLoadingAd.value = false
                 onComplete?.invoke()
             }
         })
@@ -317,6 +336,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
      private val _adGateCallback = MutableStateFlow<(() -> Unit)?>(null)
      val adGateCallback: StateFlow<(() -> Unit)?> = _adGateCallback.asStateFlow()
+
+     private val _isLoadingAd = MutableStateFlow(false)
+     val isLoadingAd: StateFlow<Boolean> = _isLoadingAd.asStateFlow()
 
      private var adTimerJob: Job? = null
 
@@ -610,13 +632,17 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  android.util.Log.e("SipViewModel", "TelecomManager failure, falling back", e)
                  false
              }
-             if (!success) {
-                 android.util.Log.i("SipViewModel", "TelecomManager call failed to initiate, falling back to direct SipEngine calling")
-                 val engineStarted = SipEngine.makeCall(account.id, finalUri)
-                 if (!engineStarted) {
-                     Toast.makeText(getApplication(), "Call not sent", Toast.LENGTH_SHORT).show()
-                 }
-             }
+            if (!success) {
+                android.util.Log.i("SipViewModel", "TelecomManager call failed to initiate, falling back to direct SipEngine calling")
+                viewModelScope.launch(Dispatchers.IO) {
+                    val engineStarted = SipEngine.makeCall(account.id, finalUri)
+                    if (!engineStarted) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(getApplication(), "Call not sent", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
          }
      }
 

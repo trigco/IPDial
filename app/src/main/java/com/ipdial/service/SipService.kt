@@ -48,11 +48,18 @@ class SipService : Service() {
                     putExtra("delayStartForeground", true)
                 }
             }
-            try {
-                context.startForegroundService(intent)
-            } catch (e: Exception) {
-                Log.e("SipService", "startForegroundService failed, trying regular startService", e)
+            if (delayStartForeground) {
+                // Starting from background (e.g. BOOT_COMPLETED) — use regular startService
+                // to avoid BackgroundServiceStartNotAllowedException on Android 12+.
+                // The service will promote to foreground itself after a short delay.
                 context.startService(intent)
+            } else {
+                try {
+                    context.startForegroundService(intent)
+                } catch (e: Exception) {
+                    Log.e("SipService", "startForegroundService failed, trying regular startService", e)
+                    context.startService(intent)
+                }
             }
         }
 
@@ -337,9 +344,7 @@ class SipService : Service() {
                             
                             Log.d("SipService", "Dialing URI: $finalUri")
                             
-                            Handler(Looper.getMainLooper()).post {
-                                SipEngine.makeCall(acc.id, finalUri)
-                            }
+                            SipEngine.makeCall(acc.id, finalUri)
                         } else {
                             Log.e("SipService", "Test call failed: No enabled account")
                         }

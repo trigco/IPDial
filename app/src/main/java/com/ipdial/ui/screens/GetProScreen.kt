@@ -30,6 +30,7 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val proPoints by vm.proPoints.collectAsState()
     val proExpiration by vm.proExpiration.collectAsState()
     val isPro by vm.isPro.collectAsState()
+    val isLoadingAd by vm.isLoadingAd.collectAsState()
 
     Scaffold(
         topBar = {
@@ -55,7 +56,7 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             }
 
             item {
-                PointsBalanceCard(proPoints) {
+                PointsBalanceCard(proPoints, isLoadingAd) {
                     vm.watchRewardedAd(context) {
                         // Reward handled in VM
                     }
@@ -176,7 +177,7 @@ fun ProStatusCard(isPro: Boolean, expiration: Long) {
 }
 
 @Composable
-fun PointsBalanceCard(points: Int, onWatchAd: () -> Unit) {
+fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -196,12 +197,17 @@ fun PointsBalanceCard(points: Int, onWatchAd: () -> Unit) {
             }
             Button(
                 onClick = onWatchAd,
+                enabled = !isLoading,
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(16.dp))
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(16.dp))
+                }
                 Spacer(Modifier.width(6.dp))
-                Text("Get 1 Point", style = MaterialTheme.typography.labelMedium)
+                Text(if (isLoading) "Loading..." else "Get 1 Point", style = MaterialTheme.typography.labelMedium)
             }
         }
     }

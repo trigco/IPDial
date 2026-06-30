@@ -188,24 +188,25 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         )
     }
 
-    if (showUpdateDialog && updateRelease != null) {
+    if (showUpdateDialog) {
+        val release = updateRelease ?: return
         AlertDialog(
             onDismissRequest = { showUpdateDialog = false },
             icon = { Icon(Icons.Default.SystemUpdate, null) },
             title = { Text("Update Available") },
             text = {
                 Column {
-                    Text("Version ${updateRelease!!.tagName.trimStart('v')} is available.")
-                    if (updateRelease!!.body.isNotBlank()) {
+                    Text("Version ${release.tagName.trimStart('v')} is available.")
+                    if (release.body.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(updateRelease!!.body.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(release.body.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.htmlUrl))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
                     context.startActivity(intent)
                 }) { Text("Download") }
             },
@@ -313,7 +314,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Ringtone")
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, globalRingtone?.let { Uri.parse(it) })
+                            globalRingtone?.let { putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it)) }
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
                         }

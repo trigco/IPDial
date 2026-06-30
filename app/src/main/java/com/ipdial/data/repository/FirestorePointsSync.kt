@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Simple Firestore sync helper for pro points and expiration.
@@ -93,18 +94,17 @@ class FirestorePointsSync(private val app: Application, private val repo: Accoun
         scope.launch {
             try {
                 if (refCode.isBlank() || refCode == deviceId) {
-                    onComplete(false, "Invalid code")
+                    withContext(Dispatchers.Main) { onComplete(false, "Invalid code") }
                     return@launch
                 }
                 val refDoc = firestore.collection("users").document(refCode)
                 val snapshot = com.google.android.gms.tasks.Tasks.await(refDoc.get())
                 if (!snapshot.exists()) {
-                    onComplete(false, "Referral code not found")
+                    withContext(Dispatchers.Main) { onComplete(false, "Referral code not found") }
                     return@launch
                 }
                 // Atomically increment both user docs by 50
                 val target = firestore.collection("users").document(refCode)
-                val me = firestore.collection("users").document(deviceId)
 
                 // award to referrer
                 target.update("points", FieldValue.increment(50))
@@ -117,19 +117,24 @@ class FirestorePointsSync(private val app: Application, private val repo: Accoun
                     "name" to deviceName,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
-                me.set(meUpdate, com.google.firebase.firestore.SetOptions.merge())
+                com.google.android.gms.tasks.Tasks.await(
+                    firestore.collection("users").document(deviceId)
+                        .set(meUpdate, com.google.firebase.firestore.SetOptions.merge())
+                )
 
-                // Also update local datastore values by fetching latest
-                val updatedMe = com.google.android.gms.tasks.Tasks.await(me.get())
+                // Read fresh values from server
+                val updatedMe = com.google.android.gms.tasks.Tasks.await(
+                    firestore.collection("users").document(deviceId).get()
+                )
                 val points = (updatedMe.data?.get("points") as? Number)?.toInt() ?: 0
                 val expiration = (updatedMe.data?.get("expiration") as? Number)?.toLong() ?: 0L
                 repo.setProPoints(points)
                 repo.setProExpiration(expiration)
 
-                onComplete(true, "Referral applied: +50 points")
+                withContext(Dispatchers.Main) { onComplete(true, "Referral applied: +50 points") }
             } catch (e: Exception) {
                 Log.e("FirestorePointsSync", "claimReferral failed", e)
-                onComplete(false, "Error: ${e.message}")
+                withContext(Dispatchers.Main) { onComplete(false, "Error: ${e.message}") }
             }
         }
     }
