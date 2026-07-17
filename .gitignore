@@ -22,7 +22,6 @@ app/google-services.json
 
 # Local configuration
 local.properties
-gradle.properties
 secrets.properties
 
 # IDE files
