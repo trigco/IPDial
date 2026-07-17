@@ -1,0 +1,51 @@
+# Project exclude paths
+/.gradle/
+/app/build/
+/app/release/
+/build/
+/captures/
+/.externalNativeBuild/
+/app/.cxx/
+
+# Artifacts
+*.apk
+*.aab
+*.output
+
+# Keystore
+keystore.properties
+*.keystore
+*.jks
+
+# Google Services
+app/google-services.json
+
+# Local configuration
+local.properties
+gradle.properties
+secrets.properties
+
+# IDE files
+.idea/
+.kotlin/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Certificates and Secrets
+*.pem
+*.key
+*.pub
+*.asc
+
+# Plan and documentation files
+plan*.md
+*plan*.md
+APP_DETAILS.md
+PROJECT_UNDERSTANDING.md
+CRASH_FIXES_*.md
+SCREEN_AND_AUDIO_FIXES_*.md
+ic.png
+ipdial_ringtone.mp3
