@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalFoundationApi::class)
 package com.ipdial.ui.screens
 
 import android.content.Intent
@@ -105,7 +106,7 @@ fun HomeScreen(
     var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
     var activeHistoryEntryForDetail by remember { mutableStateOf<CallLogEntry?>(null) }
 
-    val locale = LocalConfiguration.current.locales[0]
+    val locale = java.util.Locale.getDefault()
     
     val contactLookupMap = remember(contactsState) {
         val map = mutableMapOf<String, Contact>()
@@ -241,7 +242,7 @@ fun HomeScreen(
                                             contact.id
                                         )
                                     }
-                                    context.startActivity(intent)
+                                    try { context.startActivity(intent) } catch (e: Throwable) { android.util.Log.e("HomeScreen", "Cannot open contact", e) }
                                 }
                             )
                         }
@@ -576,7 +577,7 @@ fun CallHistoryDetailDialog(
     onCall: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val locale = LocalConfiguration.current.locales[0]
+    val locale = java.util.Locale.getDefault()
     val cleanNumber = cleanUri(selectedEntry.remoteUri)
     val displayName = contact?.name ?: selectedEntry.remoteDisplayName.ifBlank { cleanNumber }
 

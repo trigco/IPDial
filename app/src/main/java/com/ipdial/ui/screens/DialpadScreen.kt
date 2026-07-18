@@ -171,7 +171,7 @@ fun DialpadScreen(
                                     type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
                                     putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, dialString)
                                 }
-                                context.startActivity(intent)
+                                try { context.startActivity(intent) } catch (e: Throwable) { android.widget.Toast.makeText(context, "Action not supported", android.widget.Toast.LENGTH_SHORT).show() }
                             }
                         )
                     }
