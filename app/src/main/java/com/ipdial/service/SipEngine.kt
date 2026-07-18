@@ -104,14 +104,14 @@ object SipEngine {
                     try {
                         try {
                             System.loadLibrary("c++_shared")
-                        } catch (t: Throwable) {
-                            log("#$callId: Failed to load c++_shared: ${t.message}", true)
+                        } catch (e: Throwable) {
+                            log("#$callId: Failed to load c++_shared: ${e.message}", true)
                         }
                         System.loadLibrary("pjsua2")
                         isLibraryLoaded = true
                         log("#$callId: Native library pjsua2 loaded")
-                    } catch (t: Throwable) {
-                        log("#$callId: Failed to load pjsua2: ${t.message}", true)
+                    } catch (e: Throwable) {
+                        log("#$callId: Failed to load pjsua2: ${e.message}", true)
                     }
                 }
 
@@ -183,20 +183,20 @@ object SipEngine {
                     sipTpCfg.port = 0
                     try {
                         udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
-                    } catch (e: Exception) { log("#$callId: Failed to create UDP transport: ${e.message}", true) }
+                    } catch (e: Throwable) { log("#$callId: Failed to create UDP transport: ${e.message}", true) }
 
                     val tcpTpCfg = TransportConfig()
                     tcpTpCfg.port = 0
                     try {
                         tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
-                    } catch (e: Exception) { log("#$callId: Failed to create TCP transport: ${e.message}", true) }
+                    } catch (e: Throwable) { log("#$callId: Failed to create TCP transport: ${e.message}", true) }
 
                     val tlsTpCfg = TransportConfig()
                     tlsTpCfg.tlsConfig.verifyServer = true
                     tlsTpCfg.tlsConfig.verifyClient = false
                     try {
                         tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
-                    } catch (e: Exception) { log("#$callId: Failed to create TLS transport: ${e.message}", true) }
+                    } catch (e: Throwable) { log("#$callId: Failed to create TLS transport: ${e.message}", true) }
 
                     libStart()
                     log("#$callId: PJSIP started successfully with HD Audio Configs")
@@ -591,7 +591,7 @@ object SipEngine {
                     if (ecEnabled) ep.audDevManager().setEcOptions(3, 250)
                     else ep.audDevManager().setEcOptions(0, 0)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Throwable) {}
 
         } catch (e: Throwable) {
             log("Error configuring codecs: ${e.message}", true)

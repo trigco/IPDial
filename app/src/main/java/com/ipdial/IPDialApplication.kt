@@ -37,7 +37,7 @@ class IPDialApplication : Application() {
                 if (currentAlias != "Default") {
                     com.ipdial.util.AppIconHelper.setAppIcon(this@IPDialApplication, currentAlias)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 }

@@ -28,7 +28,7 @@ object TelecomHelper {
         
         try {
             telecomManager.unregisterPhoneAccount(handle)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             android.util.Log.e("TelecomHelper", "Error unregistering phone account", e)
         }
         
@@ -47,7 +47,7 @@ object TelecomHelper {
             
         try {
             telecomManager.registerPhoneAccount(phoneAccountBuilder.build())
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             android.util.Log.e("TelecomHelper", "Error registering phone account", e)
         }
     }
@@ -69,7 +69,7 @@ object TelecomHelper {
         
         try {
             telecomManager.addNewIncomingCall(handle, extras)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             android.util.Log.e("TelecomHelper", "Error reporting incoming call", e)
         }
     }
@@ -108,7 +108,7 @@ object TelecomHelper {
                 android.util.Log.e("TelecomHelper", "CALL_PHONE permission not granted")
                 false
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             android.util.Log.e("TelecomHelper", "Error placing call via Telecom", e)
             false
         }

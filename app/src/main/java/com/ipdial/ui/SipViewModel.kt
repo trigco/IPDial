@@ -523,7 +523,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
              val success = try {
                  com.ipdial.service.TelecomHelper.placeOutgoingCall(getApplication(), finalUri, account.id)
-             } catch (e: Exception) {
+             } catch (e: Throwable) {
                  android.util.Log.e("SipViewModel", "TelecomManager failure, falling back", e)
                  false
              }
@@ -600,7 +600,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  }
 
                  setAudioDevice(nextMode)
-             } catch (e: Exception) {
+             } catch (e: Throwable) {
                  android.util.Log.e("SipViewModel", "Failed to cycle audio device", e)
              }
          }
@@ -619,7 +619,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  }
                  app.startService(serviceIntent)
                  android.util.Log.d("SipViewModel", "Requested audio device: $mode")
-             } catch (e: Exception) {
+             } catch (e: Throwable) {
                  android.util.Log.e("SipViewModel", "Failed to set audio device: $mode", e)
              }
          }
@@ -639,7 +639,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  if (!hasBt && _audioDeviceMode.value == AudioDeviceMode.BLUETOOTH) {
                      setAudioDevice(AudioDeviceMode.EARPIECE)
                  }
-             } catch (e: Exception) {
+             } catch (e: Throwable) {
                  android.util.Log.e("SipViewModel", "Failed to check Bluetooth availability", e)
              }
          }
@@ -660,7 +660,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 val cleanNum = num.filter { it.isLetterOrDigit() || it == '+' }
                 val recFile = java.io.File(folder, "IPDial_${cleanNum}_${dateStr}.wav")
                 SipEngine.startRecording(recFile.absolutePath)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 android.util.Log.e("SipViewModel", "Recording failed", e)
             }
         }
@@ -756,7 +756,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                         _showAd.value = false
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 android.util.Log.e("SipViewModel", "Balance fetch failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Failed to fetch balance", Toast.LENGTH_SHORT).show()

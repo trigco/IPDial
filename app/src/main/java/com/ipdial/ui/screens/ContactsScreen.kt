@@ -127,7 +127,7 @@ fun ContactsScreen(
                                         data = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contact.id)
                                     }
                                     context.startActivity(intent)
-                                } catch (e: Exception) {
+                                } catch (e: Throwable) {
                                     android.util.Log.e("ContactsScreen", "Cannot open contact", e)
                                 }
                             }

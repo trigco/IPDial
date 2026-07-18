@@ -72,7 +72,7 @@ class SipService : Service() {
             } else {
                 try {
                     context.startForegroundService(intent)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.e("SipService", "startForegroundService failed, trying regular startService", e)
                     context.startService(intent)
                 }
@@ -191,7 +191,7 @@ class SipService : Service() {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                             }
                             applicationContext.startActivity(intent)
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
                             Log.e("SipService", "Failed to force start MainActivity", e)
                         }
                     }
@@ -260,7 +260,7 @@ class SipService : Service() {
                     }
                 }
             })
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("SipService", "Failed to register network callback", e)
         }
     }
@@ -279,7 +279,7 @@ class SipService : Service() {
                 }
                 try {
                     startActivity(fullIntent)
-                } catch (e: Exception) {}
+                } catch (e: Throwable) {}
             }
             ACTION_DECLINE -> {
                 val callId = intent.getIntExtra("callId", -1)
@@ -330,7 +330,7 @@ class SipService : Service() {
                                 SipEngine.makeCall(acc.id, finalUri)
                             }
                         }
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                     }
                 }
             }
@@ -391,7 +391,7 @@ class SipService : Service() {
                             SipEngine.reconnectAccount(account.id)
                         }
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                 }
             }
         }
@@ -433,7 +433,7 @@ class SipService : Service() {
                             mp.prepare()
                             mp.start()
                             mediaPlayer = mp
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
                             ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                                 ringtone?.isLooping = true
@@ -445,7 +445,7 @@ class SipService : Service() {
                         vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 isPlayingRingtone = false
             }
         }
@@ -460,7 +460,7 @@ class SipService : Service() {
             mediaPlayer?.release()
             mediaPlayer = null
             vibrator?.cancel()
-        } catch (e: Exception) {}
+        } catch (e: Throwable) {}
     }
 
     private fun isBluetoothConnected(): Boolean {
@@ -510,7 +510,7 @@ class SipService : Service() {
                             try {
                                 com.ipdial.data.repository.CallLogRepository.getInstance(applicationContext).insert(entry)
                                 Log.d("SipService", "Call history saved successfully.")
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 Log.e("SipService", "Failed to save call log", e)
                             }
                         }
@@ -561,7 +561,7 @@ class SipService : Service() {
                                     tg.startTone(ToneGenerator.TONE_SUP_RINGTONE)
                                     delay(2000)
                                     tg.release()
-                                } catch (e: Exception) {}
+                                } catch (e: Throwable) {}
                             }
                             if (stateChanged || speakerChanged) routeAudioToDefault()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
@@ -598,7 +598,7 @@ class SipService : Service() {
                 } else {
                     startForeground(NOTIF_ID_SERVICE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     try {
                         androidx.core.app.ServiceCompat.startForeground(
@@ -607,15 +607,15 @@ class SipService : Service() {
                             notification,
                             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                         )
-                    } catch (ex: Exception) {
+                    } catch (ex: Throwable) {
                         try {
                             startForeground(NOTIF_ID_SERVICE, notification)
-                        } catch (lastEx: Exception) {}
+                        } catch (lastEx: Throwable) {}
                     }
                 } else {
                     try {
                         startForeground(NOTIF_ID_SERVICE, notification)
-                    } catch (lastEx: Exception) {}
+                    } catch (lastEx: Throwable) {}
                 }
             }
         } else {
@@ -636,7 +636,7 @@ class SipService : Service() {
                 } else {
                     startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), type)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Throwable) {}
         }
     }
 
@@ -754,7 +754,7 @@ class SipService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 audioManager.clearCommunicationDevice()
-            } catch (e: Exception) {}
+            } catch (e: Throwable) {}
         }
     }
 
@@ -787,7 +787,7 @@ class SipService : Service() {
                 "IPDial:incoming_call_wake"
             )
             wl.acquire(10000L)
-        } catch (e: Exception) {}
+        } catch (e: Throwable) {}
     }
 
     private fun releaseWakeLock() {
@@ -855,7 +855,7 @@ class SipService : Service() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 SipEngine.destroy()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
         scope.cancel()
         super.onDestroy()
